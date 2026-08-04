@@ -47,15 +47,10 @@ pub struct Vocabulary {
     known_units: Vec<char>,
 }
 
-/// Decodes text into Unicode scalar values in source order.
-pub fn unicode_scalars(text: &str) -> Vec<char> {
-    text.chars().collect()
-}
-
 impl Vocabulary {
     /// Builds a vocabulary from the unique scalar values in `training_text`
     pub fn from_training_text(training_text: &str) -> Self {
-        let mut known_units = unicode_scalars(training_text);
+        let mut known_units = training_text.chars().collect::<Vec<_>>();
         known_units.sort_unstable();
         known_units.dedup();
         Self { known_units }
@@ -84,8 +79,7 @@ impl Vocabulary {
 
     /// Find scalar unit by the given ID.
     ///
-    /// `Ok(None)` represents the reserved unknown token. An ID above the vocabulary's largest known
-    /// ID is an error rather than an unknown token.
+    /// An ID above the vocabulary's largest known ID is an error rather than an unknown token.
     pub fn unit_for_id(&self, id: usize) -> Result<VocabularyUnit, InvalidTokenId> {
         if id == UNKNOWN_TOKEN_ID {
             return Ok(VocabularyUnit::Unknown);
