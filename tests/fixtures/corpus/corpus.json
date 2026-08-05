@@ -1,0 +1,74 @@
+[
+  {
+    "id": "en-river-dawn",
+    "language": "en",
+    "provenance_group": "pair-river-dawn",
+    "text": "At dawn, Mira carries a blue notebook to the river. She writes down the wind direction, counts three boats, and circles the quietest bend. Before leaving, she checks every number once more."
+  },
+  {
+    "id": "ru-river-dawn",
+    "language": "ru",
+    "provenance_group": "pair-river-dawn",
+    "text": "На рассвете Мира приносит к реке синюю тетрадь. Она записывает направление ветра, считает три лодки и обводит самое тихое излучье. Перед уходом она ещё раз проверяет каждое число."
+  },
+  {
+    "id": "en-clock-shop",
+    "language": "en",
+    "provenance_group": "pair-clock-shop",
+    "text": "The clock shop opens when the square is still empty. Leon listens to each mechanism, replaces one worn spring, and sets the hands to noon. By the first customer, twelve clocks are ticking together."
+  },
+  {
+    "id": "ru-clock-shop",
+    "language": "ru",
+    "provenance_group": "pair-clock-shop",
+    "text": "Часовая мастерская открывается, когда площадь ещё пуста. Леон слушает каждый механизм, меняет одну изношенную пружину и ставит стрелки на полдень. К приходу первого посетителя двенадцать часов тикают вместе."
+  },
+  {
+    "id": "en-rain-library",
+    "language": "en",
+    "provenance_group": "pair-rain-library",
+    "text": "Rain taps the library windows while Ada sorts returned books. She places travel journals on the lower shelf and astronomy guides above them. A paper list helps her return every volume to the right room."
+  },
+  {
+    "id": "ru-rain-library",
+    "language": "ru",
+    "provenance_group": "pair-rain-library",
+    "text": "Дождь стучит по окнам библиотеки, пока Ада разбирает возвращённые книги. Путевые дневники она ставит на нижнюю полку, а справочники по астрономии — выше. Бумажный список помогает вернуть каждый том в нужный зал."
+  },
+  {
+    "id": "en-bee-garden",
+    "language": "en",
+    "provenance_group": "pair-bee-garden",
+    "text": "In the garden, Noor marks the flowers that open before noon. Bees visit the yellow cups first, then move toward the purple rows. Noor keeps the paths clear so the same walk can be repeated tomorrow."
+  },
+  {
+    "id": "ru-bee-garden",
+    "language": "ru",
+    "provenance_group": "pair-bee-garden",
+    "text": "В саду Нур отмечает цветы, которые раскрываются до полудня. Пчёлы сначала летят к жёлтым чашечкам, затем перемещаются к фиолетовым рядам. Нур освобождает дорожки, чтобы завтра повторить тот же маршрут."
+  },
+  {
+    "id": "en-night-station",
+    "language": "en",
+    "provenance_group": "pair-night-station",
+    "text": "At the evening station, a red lamp signals the last local train. Ilya reads the platform number aloud and waits until every door is closed. The rails become quiet after the carriage turns north."
+  },
+  {
+    "id": "ru-night-station",
+    "language": "ru",
+    "provenance_group": "pair-night-station",
+    "text": "На вечерней станции красный фонарь подаёт сигнал последнему пригородному поезду. Илья вслух называет номер платформы и ждёт, пока закроется каждая дверь. Когда вагон поворачивает на север, рельсы затихают."
+  },
+  {
+    "id": "en-winter-window",
+    "language": "en",
+    "provenance_group": "pair-winter-window",
+    "text": "Frost draws pale branches across the kitchen window. Sonya warms a small cup, watches sparrows gather by the fence, and notes the time of sunrise. The marks melt when the room grows bright."
+  },
+  {
+    "id": "ru-winter-window",
+    "language": "ru",
+    "provenance_group": "pair-winter-window",
+    "text": "Мороз рисует светлые ветви на кухонном окне. Соня греет маленькую чашку, наблюдает, как воробьи собираются у забора, и записывает время восхода. Когда комната наполняется светом, узоры тают."
+  }
+]

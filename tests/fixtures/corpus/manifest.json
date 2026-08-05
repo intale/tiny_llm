@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "corpus_checksum": "fnv1a64:723b071980ae8a22",
+  "strategy": "fixed-paired-document-holdout-v1",
+  "train": [
+    "en-river-dawn",
+    "ru-river-dawn",
+    "en-clock-shop",
+    "ru-clock-shop",
+    "en-rain-library",
+    "ru-rain-library",
+    "en-bee-garden",
+    "ru-bee-garden"
+  ],
+  "validation": [
+    "en-night-station",
+    "ru-night-station"
+  ],
+  "test": [
+    "en-winter-window",
+    "ru-winter-window"
+  ]
+}

@@ -120,7 +120,7 @@ mod tests {
 
     const TRAINING_TEXT: &str = "hi-hi, лол";
 
-    mod from_training_text {
+    mod fn_from_training_text {
         use super::*;
 
         #[test]
@@ -134,7 +134,7 @@ mod tests {
         }
     }
 
-    mod entries {
+    mod fn_entries {
         use super::*;
 
         #[test]
@@ -156,7 +156,7 @@ mod tests {
         }
     }
 
-    mod id_for {
+    mod fn_id_for {
         use super::*;
 
         mod when_unit_exists_in_vocabulary {
@@ -182,7 +182,7 @@ mod tests {
         }
     }
 
-    mod unit_for_id {
+    mod fn_unit_for_id {
         use super::*;
 
         mod when_known_id_is_given {
@@ -225,7 +225,7 @@ mod tests {
         }
     }
 
-    mod encode {
+    mod fn_encode {
         use super::*;
 
         #[test]
@@ -239,7 +239,7 @@ mod tests {
         }
     }
 
-    mod decode {
+    mod fn_decode {
         use super::*;
 
         mod when_the_given_ids_are_all_known_values {
