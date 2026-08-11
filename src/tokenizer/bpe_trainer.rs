@@ -13,6 +13,265 @@ use std::iter::Iterator;
 /// Number of one-byte symbols present before any merge is learned.
 pub const BYTE_TOKEN_COUNT: u32 = 256;
 
+pub const TOKENS_VOCABULARY_BASE: [[u8; 1]; 256] = [
+    [0],
+    [1],
+    [2],
+    [3],
+    [4],
+    [5],
+    [6],
+    [7],
+    [8],
+    [9],
+    [10],
+    [11],
+    [12],
+    [13],
+    [14],
+    [15],
+    [16],
+    [17],
+    [18],
+    [19],
+    [20],
+    [21],
+    [22],
+    [23],
+    [24],
+    [25],
+    [26],
+    [27],
+    [28],
+    [29],
+    [30],
+    [31],
+    [32],
+    [33],
+    [34],
+    [35],
+    [36],
+    [37],
+    [38],
+    [39],
+    [40],
+    [41],
+    [42],
+    [43],
+    [44],
+    [45],
+    [46],
+    [47],
+    [48],
+    [49],
+    [50],
+    [51],
+    [52],
+    [53],
+    [54],
+    [55],
+    [56],
+    [57],
+    [58],
+    [59],
+    [60],
+    [61],
+    [62],
+    [63],
+    [64],
+    [65],
+    [66],
+    [67],
+    [68],
+    [69],
+    [70],
+    [71],
+    [72],
+    [73],
+    [74],
+    [75],
+    [76],
+    [77],
+    [78],
+    [79],
+    [80],
+    [81],
+    [82],
+    [83],
+    [84],
+    [85],
+    [86],
+    [87],
+    [88],
+    [89],
+    [90],
+    [91],
+    [92],
+    [93],
+    [94],
+    [95],
+    [96],
+    [97],
+    [98],
+    [99],
+    [100],
+    [101],
+    [102],
+    [103],
+    [104],
+    [105],
+    [106],
+    [107],
+    [108],
+    [109],
+    [110],
+    [111],
+    [112],
+    [113],
+    [114],
+    [115],
+    [116],
+    [117],
+    [118],
+    [119],
+    [120],
+    [121],
+    [122],
+    [123],
+    [124],
+    [125],
+    [126],
+    [127],
+    [128],
+    [129],
+    [130],
+    [131],
+    [132],
+    [133],
+    [134],
+    [135],
+    [136],
+    [137],
+    [138],
+    [139],
+    [140],
+    [141],
+    [142],
+    [143],
+    [144],
+    [145],
+    [146],
+    [147],
+    [148],
+    [149],
+    [150],
+    [151],
+    [152],
+    [153],
+    [154],
+    [155],
+    [156],
+    [157],
+    [158],
+    [159],
+    [160],
+    [161],
+    [162],
+    [163],
+    [164],
+    [165],
+    [166],
+    [167],
+    [168],
+    [169],
+    [170],
+    [171],
+    [172],
+    [173],
+    [174],
+    [175],
+    [176],
+    [177],
+    [178],
+    [179],
+    [180],
+    [181],
+    [182],
+    [183],
+    [184],
+    [185],
+    [186],
+    [187],
+    [188],
+    [189],
+    [190],
+    [191],
+    [192],
+    [193],
+    [194],
+    [195],
+    [196],
+    [197],
+    [198],
+    [199],
+    [200],
+    [201],
+    [202],
+    [203],
+    [204],
+    [205],
+    [206],
+    [207],
+    [208],
+    [209],
+    [210],
+    [211],
+    [212],
+    [213],
+    [214],
+    [215],
+    [216],
+    [217],
+    [218],
+    [219],
+    [220],
+    [221],
+    [222],
+    [223],
+    [224],
+    [225],
+    [226],
+    [227],
+    [228],
+    [229],
+    [230],
+    [231],
+    [232],
+    [233],
+    [234],
+    [235],
+    [236],
+    [237],
+    [238],
+    [239],
+    [240],
+    [241],
+    [242],
+    [243],
+    [244],
+    [245],
+    [246],
+    [247],
+    [248],
+    [249],
+    [250],
+    [251],
+    [252],
+    [253],
+    [254],
+    [255],
+];
+
 /// A numeric adjacent-token candidate.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TokenPair {
@@ -224,7 +483,7 @@ fn choose_most_frequent_pair(counts: &BTreeMap<TokenPair, usize>) -> Option<(Tok
 }
 
 /// Replaces matches from left to right, so one input token is consumed at most once.
-fn replace_pair_left_to_right(
+pub fn replace_pair_left_to_right(
     sequence: &[u32],
     pair: TokenPair,
     replacement: u32,
@@ -250,15 +509,20 @@ fn replace_pair_left_to_right(
     (output, replacements)
 }
 
+pub fn training_vocabulary_base() -> Vec<Vec<u8>> {
+    TOKENS_VOCABULARY_BASE
+        .iter()
+        .map(|bytes| bytes.to_vec())
+        .collect()
+}
+
 /// Repeatedly count adjacent pairs, select a winner, assign a new token ID, and replace that pair
 fn learn_from_token_sequences(
     max_merges: usize,
     document_ids: Vec<String>,
     mut sequences: Vec<Vec<u32>>,
 ) -> Result<BpeTraining, BpeTrainingError> {
-    let mut vocabulary = (u8::MIN..=u8::MAX)
-        .map(|byte| vec![byte])
-        .collect::<Vec<_>>();
+    let mut vocabulary = training_vocabulary_base();
     let mut rules: Vec<MergeRule> = Vec::new();
 
     for rank in 0..max_merges {
@@ -390,46 +654,13 @@ mod tests {
             mod when_all_is_ok {
                 use super::*;
                 use crate::corpus::{Corpus, SplitManifest};
-
-                const MANIFEST: &str = r#"
-                    {
-                      "schema_version": 1,
-                      "corpus_checksum": "fnv1a64:c5f392f1f77b65e7",
-                      "strategy": "fixed-paired-document-holdout-v1",
-                      "train": ["ru-river-dawn"],
-                      "validation": ["en-river-sunrise"],
-                      "test": ["es-river"]
-                    }
-                "#;
-
-                const CORPUS: &str = r#"
-                    [
-                      {
-                        "id": "ru-river-dawn",
-                        "language": "ru",
-                        "provenance_group": "river-dawn",
-                        "text": "foo"
-                      },
-                      {
-                        "id": "en-river-sunrise",
-                        "language": "en",
-                        "provenance_group": "river-sunrise",
-                        "text": "bar"
-                      },
-                      {
-                        "id": "es-river",
-                        "language": "es",
-                        "provenance_group": "river-common",
-                        "text": "baz"
-                      }
-                    ]
-                "#;
+                use crate::support::{SIMPLE_CORPUS_FILE, SIMPLE_CORPUS_MANIFEST};
 
                 #[test]
                 fn returns_trained_tokenizer_state() {
                     let bpe_trainer = BpeTrainer::new(2);
-                    let corpus = Corpus::from_json(CORPUS).unwrap();
-                    let manifest = SplitManifest::from_json(MANIFEST).unwrap();
+                    let corpus = Corpus::from_file(SIMPLE_CORPUS_FILE).unwrap();
+                    let manifest = SplitManifest::from_file(SIMPLE_CORPUS_MANIFEST).unwrap();
                     let partitions = manifest.partition(&corpus).unwrap();
 
                     let result = bpe_trainer.train(&partitions);
@@ -641,9 +872,7 @@ mod tests {
                     replacement_count: 3,
                 },
             ];
-            let mut expected_vocabulary = (u8::MIN..=u8::MAX)
-                .map(|byte| vec![byte])
-                .collect::<Vec<_>>();
+            let mut expected_vocabulary = training_vocabulary_base();
             expected_vocabulary.push(vec![2, 0]);
             expected_vocabulary.push(vec![1, 10]);
             let final_sequences = vec![vec![256, 257, 0, 256], vec![256, 257, 0, 256, 257, 3]];

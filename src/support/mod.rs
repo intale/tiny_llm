@@ -10,6 +10,10 @@ macro_rules! fixture_path {
 pub const CORPUS_FILE: &str = fixture_path!("corpus/corpus.json");
 pub const CORPUS_MANIFEST: &str = fixture_path!("corpus/manifest.json");
 
+pub const SIMPLE_CORPUS_FILE: &str = fixture_path!("corpus/simple_corpus.json");
+pub const SIMPLE_CORPUS_MANIFEST: &str = fixture_path!("corpus/simple_manifest.json");
+
+
 
 pub fn assert_corpus_error<R: Debug>(result: Result<R, CorpusError>, err_msg: &str) {
     match result {

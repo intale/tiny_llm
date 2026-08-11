@@ -1,0 +1,20 @@
+[
+  {
+    "id": "ru-river-dawn",
+    "language": "ru",
+    "provenance_group": "river-dawn",
+    "text": "foo"
+  },
+  {
+    "id": "en-river-sunrise",
+    "language": "en",
+    "provenance_group": "river-sunrise",
+    "text": "bar"
+  },
+  {
+    "id": "es-river",
+    "language": "es",
+    "provenance_group": "river-common",
+    "text": "baz"
+  }
+]

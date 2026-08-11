@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "corpus_checksum": "fnv1a64:89ed9c8c56d4549f",
+  "strategy": "fixed-paired-document-holdout-v1",
+  "train": [
+    "ru-river-dawn"
+  ],
+  "validation": [
+    "en-river-sunrise"
+  ],
+  "test": [
+    "es-river"
+  ]
+}
