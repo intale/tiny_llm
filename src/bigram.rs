@@ -193,17 +193,23 @@ impl BigramModel {
             })
     }
 
+    /// Calculates smoothed denominator of the given token
+    pub fn smoothing_denominator(&self, from: u32) -> Result<f64, BigramError> {
+        Ok(self.row_total(from)? as f64 + self.alpha * self.vocabulary_size as f64)
+    }
+
+    pub fn smoothed_probability(&self, from: u32, to: u32) -> Result<f64, BigramError> {
+        let numerator = self.count(from, to)? as f64 + self.alpha;
+        Ok(numerator / self.smoothing_denominator(from)?)
+    }
+
     /// Calculate smoothed probably of transition `from` => `to` based on trusted indexes
     pub fn smoothed_probability_for_checked_indices(
         &self,
         from: usize,
         to: usize,
     ) -> Result<f64, BigramError> {
-        let denominator =
-            self.row_total(from as TokenId)? as f64 + self.alpha * self.vocabulary_size as f64;
-        let numerator = self.count(from as TokenId, to as TokenId)? as f64 + self.alpha;
-
-        Ok(numerator / denominator)
+        self.smoothed_probability(from as TokenId, to as TokenId)
     }
 }
 
@@ -244,7 +250,7 @@ mod tests {
             vec![BOS_TOKEN_ID, 2, 4, 4, 3, 5, EOS_TOKEN_ID],
         ];
         let vocabulary_size = 6; // should be equal to max token id + 1
-        let alpha = 1.0;
+        let alpha = 0.5;
         BigramModel::fit_training_documents(
             vocabulary_size,
             alpha,
@@ -343,7 +349,7 @@ mod tests {
 
                     assert!(result.is_ok());
                     assert_eq!(result.as_ref().unwrap().vocabulary_size, 6);
-                    assert_eq!(result.as_ref().unwrap().alpha, 1.0);
+                    assert_eq!(result.as_ref().unwrap().alpha, 0.5);
                     assert_eq!(result.as_ref().unwrap().fitted_documents, 3);
                     assert_eq!(result.as_ref().unwrap().fitted_transitions, 12);
                     assert_eq!(
@@ -493,18 +499,57 @@ mod tests {
 
                 assert_eq!(
                     model.smoothed_probability_for_checked_indices(BOS_TOKEN_ID as usize, 3),
-                    Ok(2.0 / 9.0)
+                    Ok(1.5 / 6.0)
                 );
                 assert_eq!(
                     model.smoothed_probability_for_checked_indices(EOS_TOKEN_ID as usize, 3),
-                    Ok(1.0 / 6.0)
+                    Ok(0.5 / 3.0)
                 );
                 assert_eq!(
                     model.smoothed_probability_for_checked_indices(3, 3),
-                    Ok(1.0 / 8.0)
+                    Ok(0.5 / 5.0)
                 );
                 assert_eq!(
                     model.smoothed_probability_for_checked_indices(6, 0),
+                    Err(BigramError::TokenOutOfRange)
+                );
+            }
+        }
+
+        mod fn_smoothing_denominator {
+            use super::*;
+
+            #[test]
+            fn it_calculates_smoothed_denominator_of_the_given_token() {
+                let model = model_sample().unwrap();
+
+                assert_eq!(model.smoothing_denominator(BOS_TOKEN_ID), Ok(6.0));
+                assert_eq!(model.smoothing_denominator(3), Ok(5.0));
+                assert_eq!(model.smoothing_denominator(6), Err(BigramError::TokenOutOfRange));
+            }
+        }
+
+        mod fn_smoothed_probability {
+            use super::*;
+
+            #[test]
+            fn it_calculates_smoothed_probability_of_tokens_couple() {
+                let model = model_sample().unwrap();
+
+                assert_eq!(
+                    model.smoothed_probability(BOS_TOKEN_ID, 3),
+                    Ok(1.5 / 6.0)
+                );
+                assert_eq!(
+                    model.smoothed_probability(EOS_TOKEN_ID, 3),
+                    Ok(0.5 / 3.0)
+                );
+                assert_eq!(
+                    model.smoothed_probability(3, 3),
+                    Ok(0.5 / 5.0)
+                );
+                assert_eq!(
+                    model.smoothed_probability(6, 0),
                     Err(BigramError::TokenOutOfRange)
                 );
             }
