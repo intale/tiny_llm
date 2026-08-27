@@ -7,6 +7,7 @@ mod data;
 mod tokenizer;
 mod vocabulary;
 mod bigram;
+mod metrics;
 
 fn main() {
     println!("Hello world!");
