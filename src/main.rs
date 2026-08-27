@@ -8,6 +8,7 @@ mod tokenizer;
 mod vocabulary;
 mod bigram;
 mod metrics;
+mod tensor;
 
 fn main() {
     println!("Hello world!");
