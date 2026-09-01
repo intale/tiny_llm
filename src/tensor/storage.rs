@@ -3,6 +3,8 @@
 use std::error::Error;
 use std::fmt;
 
+pub const DEFAULT_STRIDE: usize = 1;
+
 /// A rejected tensor layout, buffer, or coordinate.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TensorError {
@@ -55,7 +57,7 @@ pub fn checked_row_major_layout(shape: &[usize]) -> Result<(Vec<usize>, usize), 
         return Ok((Vec::new(), 1));
     }
 
-    let mut strides = vec![1; shape.len()];
+    let mut strides = vec![DEFAULT_STRIDE; shape.len()];
     for axis in (0..shape.len() - 1).rev() {
         strides[axis] = shape[axis + 1]
             .checked_mul(strides[axis + 1])
