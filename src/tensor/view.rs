@@ -129,13 +129,13 @@ struct OffsetAxis {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct StrideOffsets {
+pub struct StridedOffsets {
     axes: Vec<OffsetAxis>,
     next_offset: usize,
     remaining: usize,
 }
 
-impl StrideOffsets {
+impl StridedOffsets {
     /// Checks one internal traversal plan and then owns its reusable axis state.
     pub fn checked(
         shape: &[usize],
@@ -224,7 +224,7 @@ impl StrideOffsets {
     }
 }
 
-impl Iterator for StrideOffsets {
+impl Iterator for StridedOffsets {
     type Item = usize;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -245,8 +245,8 @@ impl Iterator for StrideOffsets {
     }
 }
 
-impl ExactSizeIterator for StrideOffsets {}
-impl FusedIterator for StrideOffsets {}
+impl ExactSizeIterator for StridedOffsets {}
+impl FusedIterator for StridedOffsets {}
 
 /// An immutable n-dimensional interpretation of storage owned by a [`Tensor`].
 ///
@@ -344,7 +344,7 @@ impl<'a> TensorView<'a> {
     }
 
     /// Traverses this already validated view in logical row-major order.
-    pub fn logical_offsets(&self) -> StrideOffsets {
+    pub fn logical_offsets(&self) -> StridedOffsets {
         self.projected_offsets(&self.shape, &self.strides, self.len)
             .expect("a TensorView retains checked traversal metadata")
     }
@@ -355,8 +355,8 @@ impl<'a> TensorView<'a> {
         iteration_shape: &[usize],
         effective_strides: &[usize],
         logical_len: usize,
-    ) -> Option<StrideOffsets> {
-        StrideOffsets::checked(
+    ) -> Option<StridedOffsets> {
+        StridedOffsets::checked(
             iteration_shape,
             effective_strides,
             self.base_offset,
@@ -596,7 +596,7 @@ mod tests {
 
                 assert_eq!(
                     view.logical_offsets(),
-                    StrideOffsets {
+                    StridedOffsets {
                         axes: vec![
                             OffsetAxis {
                                 extent: 2,
@@ -628,7 +628,7 @@ mod tests {
 
                 assert_eq!(
                     view.projected_offsets(&[2, 2], &[3, 1], 4),
-                    Some(StrideOffsets {
+                    Some(StridedOffsets {
                         axes: vec![
                             OffsetAxis {
                                 extent: 2,
@@ -921,7 +921,7 @@ mod tests {
 
                 #[test]
                 fn it_returns_none() {
-                    let result = StrideOffsets::checked(&[2, 3], &[3, 2, 1], 0, 6, 6);
+                    let result = StridedOffsets::checked(&[2, 3], &[3, 2, 1], 0, 6, 6);
 
                     assert_eq!(result, None);
                 }
@@ -932,7 +932,7 @@ mod tests {
 
                 #[test]
                 fn it_returns_none() {
-                    let result = StrideOffsets::checked(&[2, 3], &[3, 1], 0, 5, 6);
+                    let result = StridedOffsets::checked(&[2, 3], &[3, 1], 0, 5, 6);
 
                     assert_eq!(result, None);
                 }
@@ -948,7 +948,7 @@ mod tests {
                     let base_offsets = 0;
                     let logical_length = 0;
                     let backing_length = 6;
-                    let result = StrideOffsets::checked(
+                    let result = StridedOffsets::checked(
                         &shape,
                         &strides,
                         base_offsets,
@@ -958,7 +958,7 @@ mod tests {
 
                     assert_eq!(
                         result,
-                        Some(StrideOffsets {
+                        Some(StridedOffsets {
                             axes: vec![
                                 OffsetAxis {
                                     extent: 2,
@@ -990,7 +990,7 @@ mod tests {
                     let base_offsets = 2;
                     let logical_length = 4;
                     let backing_length = 6;
-                    let result = StrideOffsets::checked(
+                    let result = StridedOffsets::checked(
                         &shape,
                         &strides,
                         base_offsets,
@@ -1012,7 +1012,7 @@ mod tests {
                     let base_offsets = 1;
                     let logical_length = 4;
                     let backing_length = 6;
-                    let result = StrideOffsets::checked(
+                    let result = StridedOffsets::checked(
                         &shape,
                         &strides,
                         base_offsets,
@@ -1022,7 +1022,7 @@ mod tests {
 
                     assert_eq!(
                         result,
-                        Some(StrideOffsets {
+                        Some(StridedOffsets {
                             axes: vec![
                                 OffsetAxis {
                                     extent: 2,
@@ -1058,7 +1058,7 @@ mod tests {
                     let base_offsets = 1;
                     let logical_length = 4;
                     let backing_length = 6;
-                    let stride_offsets = StrideOffsets::checked(
+                    let stride_offsets = StridedOffsets::checked(
                         &shape,
                         &strides,
                         base_offsets,
@@ -1081,7 +1081,7 @@ mod tests {
                     let base_offsets = 1;
                     let logical_length = 0;
                     let backing_length = 6;
-                    let stride_offsets = StrideOffsets::checked(
+                    let stride_offsets = StridedOffsets::checked(
                         &shape,
                         &strides,
                         base_offsets,
