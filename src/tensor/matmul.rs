@@ -515,6 +515,7 @@ mod tests {
         mod without_transpose {
             use super::*;
 
+            #[rustfmt::skip::macros(vec)]
             #[test]
             fn it_computes_new_tensor_which_is_a_product_of_two_given_tensor_views() {
                 // Strides: [2, 1, 1]
@@ -525,7 +526,7 @@ mod tests {
                     vec![3, 1, 3],
                     vec![10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0],
                 )
-                    .unwrap();
+                .unwrap();
                 let view1 = tensor1.view();
                 let view2 = tensor2.view();
 
@@ -553,7 +554,8 @@ mod tests {
                             5.0 * 70.0, 5.0 * 80.0, 5.0 * 90.0,
                             6.0 * 70.0, 6.0 * 80.0, 6.0 * 90.0
                         ]
-                    ).unwrap()
+                    )
+                    .unwrap()
                 );
             }
         }
@@ -561,13 +563,13 @@ mod tests {
         mod with_transpose {
             use super::*;
 
+            #[rustfmt::skip::macros(vec)]
             #[test]
             fn it_computes_new_tensor_which_is_a_product_of_two_given_tensor_views() {
                 // Strides: [12, 4, 1]
-                let tensor1 =
-                    Tensor::from_vec(
-                        vec![2, 3, 4], // 2 batches 3 x 4
-                        vec![
+                let tensor1 = Tensor::from_vec(
+                    vec![2, 3, 4], // 2 batches 3 x 4
+                    vec![
                             // batch 0
                             1.0, 2.0, 3.0, 4.0,
                             5.0, 6.0, 7.0, 8.0,
@@ -577,8 +579,9 @@ mod tests {
                             13.0, 14.0, 15.0, 16.0,
                             17.0, 18.0, 19.0, 20.0,
                             21.0, 22.0, 23.0, 24.0,
-                        ]
-                    ).unwrap();
+                        ],
+                )
+                .unwrap();
                 // Strides: [20, 4, 1]
                 let tensor2 = Tensor::from_vec(
                     vec![2, 5, 4], // 2 batches 5 x 4
@@ -598,7 +601,7 @@ mod tests {
                         37.0, 38.0, 39.0, 40.0,
                     ],
                 )
-                    .unwrap();
+                .unwrap();
                 let view1 = tensor1.view();
                 let view2 = tensor2.view();
 
@@ -627,11 +630,10 @@ mod tests {
                             1670.0, 1966.0, 2262.0, 2558.0, 2854.0,
                             2030.0, 2390.0, 2750.0, 3110.0, 3470.0
                         ]
-                    ).unwrap()
+                    )
+                    .unwrap()
                 );
             }
         }
-
-
     }
 }

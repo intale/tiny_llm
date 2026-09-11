@@ -9,6 +9,7 @@ mod vocabulary;
 mod bigram;
 mod metrics;
 mod tensor;
+mod nn;
 
 fn main() {
     println!("Hello world!");
