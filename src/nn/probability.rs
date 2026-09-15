@@ -805,11 +805,11 @@ mod tests {
                 fn it_returns_error() {
                     let tensor = tensor();
                     let view = tensor.view();
-                    let result = AxisPlan::new(&view, 2, false);
+                    let result = AxisPlan::new(&view, 3, false);
 
                     assert_eq!(
                         result,
-                        Err(ProbabilityError::AxisOutOfBounds { axis: 2, rank: 2 })
+                        Err(ProbabilityError::AxisOutOfBounds { axis: 3, rank: 3 })
                     );
                 }
             }

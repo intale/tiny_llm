@@ -1,1 +1,1 @@
-mod probability;
+pub mod probability;
