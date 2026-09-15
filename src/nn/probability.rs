@@ -586,7 +586,7 @@ pub fn log_softmax_forward(
 /// mean uses a scaled accumulation fallback when summing otherwise finite per-group losses would
 /// overflow.
 ///
-/// When `emit_probabilities` us `true`, softmax probabilities are produced alongside the loss using
+/// When `emit_probabilities` is `true`, softmax probabilities are produced alongside the loss using
 /// the already computed group statistics. The probability tensor has the same shape as `logits` and
 /// is materialized as a contiguous row-major tensor.
 pub fn indexed_mean_nll_forward(
@@ -1248,7 +1248,7 @@ mod tests {
                     18.0, 13.5, 17.0,
                 ],
             )
-                .unwrap();
+            .unwrap();
             let view = tensor.view().slice(2, 1..2).unwrap();
             let targets = [1, 0, 1];
             let result = indexed_mean_nll_forward(&view, 1, &targets, true).unwrap();
@@ -1274,7 +1274,7 @@ mod tests {
                     probability_nominator(13.5, 13.5).exp() / probability_denominator(13.2, 13.5),
                 ],
             )
-                .unwrap();
+            .unwrap();
             let row1_log_shifted_exponential_sum = 0.31326168751822286;
             let row2_log_shifted_exponential_sum = 0.5130152523999525;
             let row3_log_shifted_exponential_sum = 0.5543552444685268;
@@ -1289,6 +1289,17 @@ mod tests {
                 result.loss,
                 (expected_row1_loss + expected_row2_loss + expected_row3_loss) / target_count
             );
+        }
+
+        #[test]
+        fn it_uses_scaled_mean_when_the_loss_sum_overflows() {
+            let tensor = Tensor::from_vec(vec![2, 2], vec![f64::MAX, 0.0, f64::MAX, 0.0]).unwrap();
+            let targets = [1, 1];
+
+            let result = indexed_mean_nll_forward(&tensor.view(), 1, &targets, false).unwrap();
+
+            assert_eq!(result.loss, f64::MAX);
+            assert_eq!(result.probabilities, None);
         }
     }
 }
