@@ -727,36 +727,6 @@ mod tests {
         .unwrap()
     }
 
-    #[test]
-    fn t() {
-        let tensor = Tensor::from_vec(
-            vec![2, 3, 4],
-            vec![
-                1., 2., 3., 4., 5., 6., 7., 8., 9., 10., 11., 12., 13., 14., 15., 16., 17., 18.,
-                19., 20., 21., 22., 23., 24.,
-            ],
-        )
-        .unwrap();
-        let view = tensor.view();
-        let plan = AxisPlan::new(&view, 1, false).unwrap();
-
-        println!("{:?}", plan);
-        println!("{:?}", plan.group_offsets(&view));
-        println!("{:?}", plan.group_offsets(&view).collect::<Vec<_>>());
-        plan.for_each_group(
-            &view,
-            LogitFiniteness::Validated(FiniteLogits),
-            |group, group_base, stats| {
-                println!(
-                    "group: {:?}, group_base: {:?}, stats: {:?}",
-                    group, group_base, stats
-                );
-                Ok(())
-            },
-        )
-        .unwrap();
-    }
-
     mod fn_row_stats {
         use super::*;
 
