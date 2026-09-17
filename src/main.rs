@@ -10,6 +10,7 @@ mod bigram;
 mod metrics;
 mod tensor;
 mod nn;
+mod autograd;
 
 fn main() {
     println!("Hello world!");
