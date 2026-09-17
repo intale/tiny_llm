@@ -1,4 +1,5 @@
-//! A dependency-free scalar reverse-mode computation graph
+//! A dependency-free scalar reverse-mode computation graph. Education purpose only - it doesn't
+//! take part in LLM implementation.
 
 use rustc_hash::{FxHashMap, FxHashSet};
 use std::cell::RefCell;

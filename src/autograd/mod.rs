@@ -1,1 +1,1 @@
-pub mod scalar;
+mod scalar;
