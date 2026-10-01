@@ -1194,6 +1194,51 @@ pub fn apply_model_vjp(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::autograd::tensor_core::GraphRetention;
+    use crate::support::gradcheck::sampled_tensor_gradient_check;
+
+    fn backward_with_test_seed(output: &TensorValue) -> Tensor {
+        let elements = output.value().len();
+        let values = (1..=elements)
+            .map(|index| index as f64 / elements as f64)
+            .collect();
+        let seed = Tensor::from_vec(output.shape(), values).unwrap();
+        output
+            .backward_with_seed(&seed.view(), GraphRetention::Retain)
+            .unwrap();
+        seed
+    }
+
+    fn assert_sampled_gradient(
+        parameter: &TensorValue,
+        parameter_value: &Tensor,
+        seed: &Tensor,
+        mut objective: impl FnMut(&Tensor) -> TensorValue,
+    ) {
+        let analytic = parameter.gradient_snapshot().unwrap();
+        let mut checked_parameter = parameter_value.clone();
+        let check = sampled_tensor_gradient_check(
+            &mut checked_parameter,
+            &analytic.view(),
+            1.0e-5,
+            1.0e-6,
+            parameter_value.len(),
+            |candidate| {
+                let output = objective(candidate);
+                output
+                    .value()
+                    .as_slice()
+                    .iter()
+                    .zip(seed.as_slice())
+                    .map(|(value, seed)| value * seed)
+                    .sum()
+            },
+        )
+        .unwrap();
+
+        assert!(check.passed, "{check:#?}");
+        assert_eq!(check.checks.len(), parameter_value.len());
+    }
 
     mod row_gather_plan {
         use super::*;
@@ -1403,6 +1448,18 @@ mod tests {
                 );
                 assert_eq!(result.is_released(), false);
                 assert_eq!(result.gradient_snapshot(), None);
+
+                let seed = backward_with_test_seed(result);
+                assert_sampled_gradient(&tensor_value1, &tensor1, &seed, |candidate| {
+                    let candidate = TensorValue::parameter(candidate.clone()).unwrap();
+                    let right = TensorValue::constant(tensor2.clone()).unwrap();
+                    candidate.matmul_with_context(context, &right).unwrap()
+                });
+                assert_sampled_gradient(&tensor_value2, &tensor2, &seed, |candidate| {
+                    let left = TensorValue::constant(tensor1.clone()).unwrap();
+                    let candidate = TensorValue::parameter(candidate.clone()).unwrap();
+                    left.matmul_with_context(context, &candidate).unwrap()
+                });
             }
         }
 
@@ -1442,6 +1499,14 @@ mod tests {
                 );
                 assert_eq!(result.is_released(), false);
                 assert_eq!(result.gradient_snapshot(), None);
+
+                let seed = backward_with_test_seed(result);
+                assert_sampled_gradient(&tensor_value, &tensor, &seed, |candidate| {
+                    TensorValue::parameter(candidate.clone())
+                        .unwrap()
+                        .gather_rows_with_context(context, &indices, &index_shape)
+                        .unwrap()
+                });
             }
         }
 
@@ -1477,6 +1542,14 @@ mod tests {
                 );
                 assert_eq!(result.is_released(), false);
                 assert_eq!(result.gradient_snapshot(), None);
+
+                let seed = backward_with_test_seed(result);
+                assert_sampled_gradient(&tensor_value, &tensor, &seed, |candidate| {
+                    TensorValue::parameter(candidate.clone())
+                        .unwrap()
+                        .exp_with_context(context)
+                        .unwrap()
+                });
             }
         }
 
@@ -1512,6 +1585,14 @@ mod tests {
                 );
                 assert_eq!(result.is_released(), false);
                 assert_eq!(result.gradient_snapshot(), None);
+
+                let seed = backward_with_test_seed(result);
+                assert_sampled_gradient(&tensor_value, &tensor, &seed, |candidate| {
+                    TensorValue::parameter(candidate.clone())
+                        .unwrap()
+                        .log_with_context(context)
+                        .unwrap()
+                });
             }
         }
 
@@ -1581,6 +1662,14 @@ mod tests {
                 );
                 assert_eq!(result.is_released(), false);
                 assert_eq!(result.gradient_snapshot(), None);
+
+                let seed = backward_with_test_seed(result);
+                assert_sampled_gradient(&tensor_value, &tensor, &seed, |candidate| {
+                    TensorValue::parameter(candidate.clone())
+                        .unwrap()
+                        .silu_with_context(context)
+                        .unwrap()
+                });
             }
         }
 
@@ -1618,6 +1707,14 @@ mod tests {
                 );
                 assert_eq!(result.is_released(), false);
                 assert_eq!(result.gradient_snapshot(), None);
+
+                let seed = backward_with_test_seed(result);
+                assert_sampled_gradient(&tensor_value, &tensor, &seed, |candidate| {
+                    TensorValue::parameter(candidate.clone())
+                        .unwrap()
+                        .log_softmax_with_context(context, axis)
+                        .unwrap()
+                });
             }
         }
 
@@ -1665,6 +1762,14 @@ mod tests {
                     );
                     assert_eq!(result.is_released(), false);
                     assert_eq!(result.gradient_snapshot(), None);
+
+                    let seed = backward_with_test_seed(result);
+                    assert_sampled_gradient(&tensor_value, &tensor, &seed, |candidate| {
+                        TensorValue::parameter(candidate.clone())
+                            .unwrap()
+                            .causal_softmax_with_context(context)
+                            .unwrap()
+                    });
                 }
             }
 
@@ -1806,6 +1911,14 @@ mod tests {
                 );
                 assert_eq!(result.is_released(), false);
                 assert_eq!(result.gradient_snapshot(), None);
+
+                let seed = backward_with_test_seed(result);
+                assert_sampled_gradient(&tensor_value, &tensor, &seed, |candidate| {
+                    TensorValue::parameter(candidate.clone())
+                        .unwrap()
+                        .rotary_pairs_with_context(context, &cos_tensor, &sin_tensor)
+                        .unwrap()
+                });
             }
         }
 
@@ -1850,6 +1963,14 @@ mod tests {
                 );
                 assert_eq!(result.is_released(), false);
                 assert_eq!(result.gradient_snapshot(), None);
+
+                let seed = backward_with_test_seed(result);
+                assert_sampled_gradient(&tensor_value, &tensor, &seed, |candidate| {
+                    TensorValue::parameter(candidate.clone())
+                        .unwrap()
+                        .indexed_mean_nll_with_context(context, axis, &targets)
+                        .unwrap()
+                });
             }
         }
     }
