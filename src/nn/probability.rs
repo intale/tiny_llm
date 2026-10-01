@@ -5,6 +5,7 @@ use std::fmt;
 
 use crate::tensor::storage::{Tensor, TensorError, checked_row_major_layout};
 use crate::tensor::view::{StridedOffsets, TensorView, TensorViewError};
+use crate::utils::canonical_zero;
 
 /// A rejected probability operation, target, output, or converted view operation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -352,10 +353,6 @@ fn output_buffer(elements: usize) -> Result<Vec<f64>, ProbabilityError> {
     Ok(values)
 }
 
-fn positive_zero(value: f64) -> f64 {
-    if value == 0.0 { 0.0 } else { value }
-}
-
 /// Requested normalized values emitted by one checked forward traversal.
 #[derive(Debug, PartialEq)]
 struct NormalizedForward {
@@ -416,10 +413,10 @@ impl NormalizedGroupOutput<'_> {
             let shifted = input.value_at_storage_offset(input_offset) - stats.maximum;
             if let Some(values) = self.probabilities.as_mut() {
                 values[output_offset] =
-                    positive_zero(shifted.exp() / stats.shifted_exponential_sum);
+                    canonical_zero(shifted.exp() / stats.shifted_exponential_sum);
             }
             if let Some(values) = self.log_probabilities.as_mut() {
-                values[output_offset] = positive_zero(shifted - stats.log_shifted_exponential_sum);
+                values[output_offset] = canonical_zero(shifted - stats.log_shifted_exponential_sum);
             }
 
             if class + 1 < plan.classes {
@@ -679,7 +676,7 @@ pub fn indexed_mean_nll_forward(
         Ok(())
     })?;
 
-    let loss = positive_zero(if needs_scaled_fallback {
+    let loss = canonical_zero(if needs_scaled_fallback {
         scaled_mean
     } else {
         total / target_count

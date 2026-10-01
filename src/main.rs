@@ -11,6 +11,7 @@ mod metrics;
 mod tensor;
 mod nn;
 mod autograd;
+pub mod utils;
 
 fn main() {
     println!("Hello world!");
