@@ -406,9 +406,11 @@ mod tests {
 
             mod when_all_is_ok {
                 use super::*;
+                use crate::autograd::model_ops::ModelSavedContext;
+                use crate::autograd::tensor_core::{ParentEdgeTest, TensorSavedContext};
 
                 #[test]
-                fn it_gathers_token_rows_by_token_ids() {
+                fn it_performs_gather_rows_forward_pass() {
                     let tensor =
                         Tensor::from_vec(vec![3, 2], vec![1., 2., 3., 4., 5., 6.]).unwrap();
                     let param = NamedParameter::from_tensor("foo", tensor.clone()).unwrap();
@@ -419,10 +421,26 @@ mod tests {
                     let result = embedding.forward_with_context(context, &token_ids, &token_shape);
 
                     assert!(result.is_ok(), "{result:?}");
+                    let resulting_tensor_value = result.unwrap();
                     assert_eq!(
-                        result.unwrap().value().clone(),
+                        resulting_tensor_value.value().clone(),
                         Tensor::from_vec(vec![2, 2], vec![1., 2., 1., 2.]).unwrap()
-                    )
+                    );
+                    assert_eq!(resulting_tensor_value.parents().len(), 1);
+
+                    assert_eq!(
+                        resulting_tensor_value.parents()[0].parent.value().clone(),
+                        tensor.clone()
+                    );
+                    assert_eq!(
+                        resulting_tensor_value.parents()[0].saved,
+                        TensorSavedContext::Model(ModelSavedContext::GatherRows {
+                            indices: vec![0, 0],
+                            index_shape: vec![2],
+                            input_shape: vec![3, 2],
+                            output_shape: vec![2, 2],
+                        })
+                    );
                 }
             }
         }
