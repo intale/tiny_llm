@@ -256,7 +256,7 @@ fn initialized_values(
 }
 
 /// One immutable external name paired with one trainable tensor-tape leaf
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct NamedParameter {
     name: String,
     tensor: TensorValue,
@@ -323,7 +323,7 @@ impl NamedParameter {
 }
 
 /// A duplicate-checked, declaration-ordered set of name parameters
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct NamedParameters {
     parameters: Vec<NamedParameter>,
 }

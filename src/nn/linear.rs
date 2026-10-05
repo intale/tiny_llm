@@ -85,7 +85,7 @@ impl From<TensorAutodiffError> for LinearError {
 }
 
 /// One `[input_width, output_width]` feature projection with optional bias
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Linear {
     parameters: NamedParameters,
     input_width: usize,
@@ -194,11 +194,12 @@ impl Linear {
         self.forward_with_context(AutogradContext::recording(), input)
     }
 
-    /// Projects the final feature axis under an explicit recording policy
+    /// Projects the final feature axis under an explicit recording policy. Related formula is:
+    /// Y = XW + b
     pub fn forward_with_context(
         &self,
         context: AutogradContext,
-        input: &TensorValue,
+        input: &TensorValue, // our X
     ) -> Result<TensorValue, LinearError> {
         let input_shape = input.shape();
         if input_shape.is_empty() {
@@ -304,7 +305,7 @@ mod tests {
                     use super::*;
 
                     #[test]
-                    fn it_computes_linear() {
+                    fn it_computes_linear_and_persists_rng_changes() {
                         let param_prefix = "foo";
                         let input_width = 2;
                         let output_width = 1;
