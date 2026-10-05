@@ -1,6 +1,8 @@
 pub mod gradcheck;
 
-use std::fmt::Debug;
+use std::fmt;
+use std::fmt::{Debug, Display};
+use crate::autograd::tensor_core::{TensorOperation, TensorValue};
 use crate::corpus::CorpusError;
 
 macro_rules! fixture_path {
@@ -26,4 +28,15 @@ pub fn assert_corpus_error<R: Debug>(result: Result<R, CorpusError>, err_msg: &s
             }
         }
     }
+}
+
+pub fn all_forward_ops(tensor_value: &TensorValue) -> Vec<String> {
+    let parents = tensor_value.parents();
+    let mut ops = vec![];
+    parents.iter().for_each(|edge| {
+        ops.extend(all_forward_ops(&edge.parent))
+        }
+    );
+    ops.push(format!("{}", tensor_value.operation()));
+    ops
 }
