@@ -1,8 +1,7 @@
 pub mod gradcheck;
 
-use std::fmt;
-use std::fmt::{Debug, Display};
-use crate::autograd::tensor_core::{TensorOperation, TensorValue};
+use std::fmt::{Debug};
+use crate::autograd::tensor_core::{TensorValue};
 use crate::corpus::CorpusError;
 
 macro_rules! fixture_path {

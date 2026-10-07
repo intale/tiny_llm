@@ -252,6 +252,19 @@ impl EncodedDocument {
     pub fn incomplete_tail(&self, config: &CausalWindowConfig) -> Option<IncompleteTail<'_>> {
         config.incomplete_tail(&self.token_ids)
     }
+
+    #[cfg(test)]
+    pub fn from_raw_parts(
+        id: impl Into<String>,
+        partition: Partition,
+        token_ids: Vec<u32>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            partition,
+            token_ids,
+        }
+    }
 }
 
 /// Encoded documents kept in three disjoin owned collections.

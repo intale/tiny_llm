@@ -12,6 +12,7 @@ mod tensor;
 mod nn;
 mod autograd;
 pub mod utils;
+mod training;
 
 fn main() {
     println!("Hello world!");
