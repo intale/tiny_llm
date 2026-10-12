@@ -1,5 +1,22 @@
 //! A trainable token table backed by differentiable row gathering.
 
+/// Maps discrete token IDs to dense, trainable feature vectors.
+///
+/// Token IDs are arbitrary identifiers: their numeric values do not encode semantic relationships
+/// between tokens. A one-hot representation preserves token identity but requires a sparse vector
+/// as wide as the vocabulary.
+///
+/// Embeddings solve this by maintaining a trainable matrix of shape
+/// [vocabulary_size, embedding_dim], where each row represents one token.
+///
+/// Instead of constructing a one-hot vector and multiplying it by the embedding matrix, the forward
+/// pass directly looks up the corresponding row. Both operations are mathematically equivalent, but
+/// direct lookup avoids unnecessary computation and memory allocation.
+///
+/// During training, these vectors learn useful representations through backpropagation. The
+/// backward pass uses scatter-add to accumulate gradients into the embedding matrix, including when
+/// a token occurs multiple times.
+
 use std::error::Error;
 use std::fmt;
 

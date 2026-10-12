@@ -1342,6 +1342,12 @@ impl TensorValue {
         self.backward_scalar(NoTensorBackwardTrace)
     }
 
+    /// Reverses a rank-zero output with an implicit scalar seed of one
+    pub fn backward_with_release(&self) -> Result<(), TensorAutodiffError> {
+        let seed = Tensor::from_vec(Vec::new(), vec![1.0])?;
+        self.backward_with_observe(&seed.view(), GraphRetention::Release, NoTensorBackwardTrace)
+    }
+
     /// Reverses a rank-zero output and records its node and edge evidence
     pub fn backward_with_trace(&self) -> Result<TensorBackwardPass, TensorAutodiffError> {
         self.backward_scalar(RecordTensorBackwardTrace::default())
