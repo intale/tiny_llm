@@ -3,3 +3,4 @@ pub mod init;
 pub mod embedding;
 pub mod linear;
 pub mod swiglu;
+pub mod residual;
