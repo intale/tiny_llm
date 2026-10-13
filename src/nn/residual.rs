@@ -108,8 +108,8 @@ mod tests {
             }
 
             mod when_all_is_ok {
-                use crate::autograd::tensor_core::{ParentEdgeTest, TensorOperation};
                 use super::*;
+                use crate::autograd::tensor_core::{ParentEdgeTest, TensorOperation};
 
                 #[test]
                 fn it_adds_identity_tensor() {
@@ -124,13 +124,40 @@ mod tests {
 
                     assert!(result.is_ok(), "{result:?}");
                     let result = &result.as_ref().unwrap();
-                    let expected_tensor =
-                        Tensor::from_vec(vec![1, 2], vec![4., 6.]).unwrap();
-                    assert_eq!(
-                        result.value().clone(),
-                        expected_tensor.clone()
-                    );
+                    let expected_tensor = Tensor::from_vec(vec![1, 2], vec![4., 6.]).unwrap();
+                    assert_eq!(result.value().clone(), expected_tensor.clone());
                     assert_eq!(result.operation(), TensorOperation::Add);
+                }
+            }
+
+            mod gradient_calculation {
+                use super::*;
+                use crate::support::gradcheck::{assert_sampled_gradient, backward_with_test_seed};
+
+                #[test]
+                fn it_calculates_gradient_correctly() {
+                    let branch_output_tensor = Tensor::from_vec(vec![1, 2], vec![1., 2.]).unwrap();
+                    let identity_tensor = Tensor::from_vec(vec![1, 2], vec![3., 4.]).unwrap();
+                    let branch_output_param =
+                        TensorValue::parameter(branch_output_tensor.clone()).unwrap();
+                    let identity_param = TensorValue::parameter(identity_tensor.clone()).unwrap();
+                    let context = AutogradContext::recording();
+                    let result =
+                        branch_output_param.residual_add_with_context(context, &identity_param);
+
+                    assert!(result.is_ok(), "{result:?}");
+                    let result = result.as_ref().unwrap();
+                    let seed = backward_with_test_seed(result);
+                    assert_sampled_gradient(
+                        &branch_output_param,
+                        &branch_output_tensor,
+                        &seed,
+                        |candidate| {
+                            let candidate = TensorValue::parameter(candidate.clone()).unwrap();
+                            let right = TensorValue::constant(identity_tensor.clone()).unwrap();
+                            candidate.residual_add_with_context(context, &right).unwrap()
+                        },
+                    );
                 }
             }
         }

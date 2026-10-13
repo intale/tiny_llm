@@ -1194,51 +1194,7 @@ pub fn apply_model_vjp(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::autograd::tensor_core::GraphRetention;
-    use crate::support::gradcheck::sampled_tensor_gradient_check;
-
-    fn backward_with_test_seed(output: &TensorValue) -> Tensor {
-        let elements = output.value().len();
-        let values = (1..=elements)
-            .map(|index| index as f64 / elements as f64)
-            .collect();
-        let seed = Tensor::from_vec(output.shape(), values).unwrap();
-        output
-            .backward_with_seed(&seed.view(), GraphRetention::Retain)
-            .unwrap();
-        seed
-    }
-
-    fn assert_sampled_gradient(
-        parameter: &TensorValue,
-        parameter_value: &Tensor,
-        seed: &Tensor,
-        mut objective: impl FnMut(&Tensor) -> TensorValue,
-    ) {
-        let analytic = parameter.gradient_snapshot().unwrap();
-        let mut checked_parameter = parameter_value.clone();
-        let check = sampled_tensor_gradient_check(
-            &mut checked_parameter,
-            &analytic.view(),
-            1.0e-5,
-            1.0e-6,
-            parameter_value.len(),
-            |candidate| {
-                let output = objective(candidate);
-                output
-                    .value()
-                    .as_slice()
-                    .iter()
-                    .zip(seed.as_slice())
-                    .map(|(value, seed)| value * seed)
-                    .sum()
-            },
-        )
-        .unwrap();
-
-        assert!(check.passed, "{check:#?}");
-        assert_eq!(check.checks.len(), parameter_value.len());
-    }
+    use crate::support::gradcheck::*;
 
     mod row_gather_plan {
         use super::*;

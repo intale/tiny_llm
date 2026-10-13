@@ -1,5 +1,6 @@
 //! Central difference and sampled tensor-coordinate gradient checks.
 
+use crate::autograd::tensor_core::{GraphRetention, TensorValue};
 use crate::tensor::storage::Tensor;
 use crate::tensor::view::{TensorView, TensorViewError};
 use std::error::Error;
@@ -735,6 +736,102 @@ pub fn sampled_tensor_gradient_check(
     })
 }
 
+/// Backpropagates through a tensor output with a deterministic, non-uniform seed.
+///
+/// Let `y = f(x)` be the tensor output flattened in row-major order and let `n` be its number of
+/// elements. This helper constructs an output cotangent `s` whose coordinates are
+///
+/// `sᵢ = (i + 1) / n`, for `i = 0, …, n − 1`.
+///
+/// The seed defines the synthetic scalar loss
+///
+/// `L(x) = sᵀy = Σᵢ sᵢ fᵢ(x)`.
+///
+/// Calling `backward_with_seed(s)` does not need to materialize this loss node. It directly
+/// computes the equivalent vector-Jacobian product
+///
+/// `∇ₓL = J_f(x)ᵀs`,
+///
+/// because `∂L/∂y = s`. The returned tensor is this exact `s`, allowing
+/// [`assert_sampled_gradient`] to construct the same loss during its numerical evaluations. For a
+/// scalar output, `n = 1` and `s = [1]`, so the synthetic loss is simply the output itself.
+///
+/// A non-uniform seed makes the check sensitive to how individual output coordinates contribute
+/// to the input gradient. Using an all-ones seed would instead define `L = Σᵢ yᵢ`. For operations
+/// such as softmax this loss is the constant `1`, making `∇ₓL = 0` and potentially allowing an
+/// incorrect local derivative to pass unnoticed.
+///
+/// The backward pass retains the graph and accumulates the resulting gradient in every reachable
+/// parameter.
+pub fn backward_with_test_seed(output: &TensorValue) -> Tensor {
+    let elements = output.value().len();
+    let values = (1..=elements)
+        .map(|index| index as f64 / elements as f64)
+        .collect();
+    let seed = Tensor::from_vec(output.shape(), values).unwrap();
+    output
+        .backward_with_seed(&seed.view(), GraphRetention::Retain)
+        .unwrap();
+    seed
+}
+
+/// Checks one parameter's accumulated reverse-mode gradient against finite differences.
+///
+/// `parameter` must belong to a graph on which [`backward_with_test_seed`] (or an equivalent
+/// seeded backward pass) has already run, and `parameter_value` must be the corresponding primal
+/// value. For each perturbed parameter tensor, `objective` must rebuild the same forward operation
+/// and return an output with the same shape and coordinate order as `seed`.
+///
+/// For every perturbed candidate `x′`, the helper evaluates `y′ = objective(x′)` and explicitly
+/// computes the synthetic loss
+///
+/// `L(x′) = dot(y′, seed) = Σᵢ y′ᵢ seedᵢ`.
+///
+/// [`sampled_tensor_gradient_check`] estimates each sampled `∂L/∂xⱼ` from these scalar losses and
+/// compares it with the gradient accumulated by the seeded backward pass:
+///
+/// `analyticⱼ = [J_objective(x)ᵀ seed]ⱼ`.
+///
+/// Reusing the exact same seed on both sides is essential: it makes the numerical finite difference
+/// and the analytic vector-Jacobian product derivatives of the same scalar function. The explicit
+/// shape check also guarantees that every output coordinate is paired with its intended seed
+/// coordinate rather than being silently omitted by `zip`.
+///
+/// Every parameter coordinate is checked with [`sampled_tensor_gradient_check`] using a step of
+/// `1e-5` and a scaled-error tolerance of `1e-6`.
+pub fn assert_sampled_gradient(
+    parameter: &TensorValue,
+    parameter_value: &Tensor,
+    seed: &Tensor,
+    mut objective: impl FnMut(&Tensor) -> TensorValue,
+) {
+    let analytic = parameter.gradient_snapshot().unwrap();
+    let mut checked_parameter = parameter_value.clone();
+    let check = sampled_tensor_gradient_check(
+        &mut checked_parameter,
+        &analytic.view(),
+        1.0e-5,
+        1.0e-6,
+        parameter_value.len(),
+        |candidate| {
+            let output = objective(candidate);
+            assert_eq!(output.shape(), seed.shape());
+
+            output
+                .value()
+                .as_slice()
+                .iter()
+                .zip(seed.as_slice())
+                .map(|(value, seed)| value * seed)
+                .sum()
+        },
+    )
+    .unwrap();
+
+    assert!(check.passed, "{check:#?}");
+    assert_eq!(check.checks.len(), parameter_value.len());
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -754,7 +851,7 @@ mod tests {
             probes.push(point);
             point * point
         })
-            .unwrap();
+        .unwrap();
 
         assert_eq!(probes, [2.9, 3.0, 3.1]);
         assert_eq!(difference.requested_step, 0.1);
@@ -792,7 +889,7 @@ mod tests {
             let centered = value - point;
             centered * centered
         })
-            .unwrap();
+        .unwrap();
         assert_eq!(centered_square.stencil, DifferenceStencil::Unequal);
         assert_close(centered_square.derivative, 0.0, f64::EPSILON);
     }
@@ -856,7 +953,7 @@ mod tests {
         let check = scalar_gradient_check(point, analytic, 1.0e-5, 1.0e-9, |value| {
             value.exp() * value.sin()
         })
-            .unwrap();
+        .unwrap();
 
         assert!(check.comparison.passed);
         assert!(check.comparison.scaled_error < 1.0e-9);
@@ -937,7 +1034,7 @@ mod tests {
                 -0.492_061_880_011_766_6,
             ],
         )
-            .unwrap()
+        .unwrap()
     }
 
     #[test]
@@ -957,7 +1054,7 @@ mod tests {
             4,
             |candidate| indexed_mean_nll(&candidate.view(), 1, &[0, 2]).unwrap(),
         )
-            .unwrap();
+        .unwrap();
 
         assert!(check.passed);
         assert_eq!(
@@ -995,7 +1092,7 @@ mod tests {
             4,
             |candidate| indexed_mean_nll(&candidate.view(), 1, &[0, 2]).unwrap(),
         )
-            .unwrap();
+        .unwrap();
         assert!(!corrupted_check.passed);
         assert_eq!(
             logits
@@ -1024,7 +1121,7 @@ mod tests {
             2,
             |tensor| tensor.as_slice().iter().map(|value| value * value).sum(),
         )
-            .unwrap();
+        .unwrap();
         assert!(!check.passed);
         assert_eq!(
             parameters
@@ -1043,7 +1140,7 @@ mod tests {
             2,
             |_| f64::NAN,
         )
-            .unwrap_err();
+        .unwrap_err();
         assert!(matches!(
             error,
             GradCheckError::AtCoordinate {
@@ -1075,7 +1172,7 @@ mod tests {
                 if calls == 2 { f64::NAN } else { 0.0 }
             },
         )
-            .unwrap_err();
+        .unwrap_err();
         assert!(matches!(
             center_error,
             GradCheckError::AtCoordinate {
@@ -1108,7 +1205,7 @@ mod tests {
                 if calls == 3 { f64::NAN } else { 0.0 }
             },
         )
-            .unwrap_err();
+        .unwrap_err();
         assert!(matches!(
             plus_error,
             GradCheckError::AtCoordinate {
@@ -1147,7 +1244,7 @@ mod tests {
                 tensor.as_slice()[0]
             },
         )
-            .unwrap();
+        .unwrap();
 
         let difference = check.checks[0].difference;
         assert_eq!(
@@ -1254,7 +1351,7 @@ mod tests {
                 0.0
             },
         )
-            .unwrap_err();
+        .unwrap_err();
         assert!(matches!(
             parameter_error,
             GradCheckError::AtCoordinate {
@@ -1278,7 +1375,7 @@ mod tests {
                 0.0
             },
         )
-            .unwrap_err();
+        .unwrap_err();
         assert!(matches!(
             analytic_error,
             GradCheckError::AtCoordinate {
