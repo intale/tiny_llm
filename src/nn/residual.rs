@@ -148,6 +148,9 @@ mod tests {
                     assert!(result.is_ok(), "{result:?}");
                     let result = result.as_ref().unwrap();
                     let seed = backward_with_test_seed(result);
+
+                    assert_eq!(branch_output_param.gradient().unwrap().as_slice(), vec![0.5, 1.0]);
+                    assert_eq!(identity_param.gradient().unwrap().as_slice(), vec![0.5, 1.0]);
                     assert_sampled_gradient(
                         &branch_output_param,
                         &branch_output_tensor,

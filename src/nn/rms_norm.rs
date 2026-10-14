@@ -498,7 +498,8 @@ mod tests {
                     let gain = NamedParameter::from_tensor(
                         "foo",
                         Tensor::from_vec(vec![1], vec![1.]).unwrap(),
-                    ).unwrap();
+                    )
+                    .unwrap();
                     let result = RmsNorm::from_gain(gain, epsilon);
 
                     assert!(result.is_err(), "{result:?}");
@@ -518,7 +519,8 @@ mod tests {
                     let gain = NamedParameter::from_tensor(
                         "foo",
                         Tensor::from_vec(vec![1, 1], vec![1.]).unwrap(),
-                    ).unwrap();
+                    )
+                    .unwrap();
                     let result = RmsNorm::from_gain(gain, epsilon);
 
                     assert!(result.is_err(), "{result:?}");
@@ -538,14 +540,12 @@ mod tests {
                     let gain = NamedParameter::from_tensor(
                         "foo",
                         Tensor::from_vec(vec![0], vec![]).unwrap(),
-                    ).unwrap();
+                    )
+                    .unwrap();
                     let result = RmsNorm::from_gain(gain, epsilon);
 
                     assert!(result.is_err(), "{result:?}");
-                    assert_eq!(
-                        result.err().unwrap(),
-                        RmsNormError::EmptyFeatureWidth
-                    );
+                    assert_eq!(result.err().unwrap(), RmsNormError::EmptyFeatureWidth);
                 }
             }
 
@@ -558,7 +558,8 @@ mod tests {
                     let gain = NamedParameter::from_tensor(
                         "foo",
                         Tensor::from_vec(vec![2], vec![1., 1.]).unwrap(),
-                    ).unwrap();
+                    )
+                    .unwrap();
                     let result = RmsNorm::from_gain(gain, epsilon);
 
                     assert!(result.is_ok(), "{result:?}");
@@ -567,8 +568,7 @@ mod tests {
                     assert_eq!(result.feature_width, 2);
                     assert_eq!(
                         result.gain().tensor().value().clone(),
-                        Tensor::from_vec(vec![2], vec![1., 1.])
-                            .unwrap()
+                        Tensor::from_vec(vec![2], vec![1., 1.]).unwrap()
                     );
                 }
             }
@@ -738,6 +738,21 @@ mod tests {
                     let output = result.unwrap().into_output();
                     let seed = backward_with_test_seed(&output);
 
+                    assert_eq!(
+                        rms_norm.gain().tensor().gradient().unwrap().as_slice(),
+                        vec![1.2791701625033771, 2.24934963081599]
+                    );
+                    assert_eq!(
+                        input_param.gradient().unwrap().as_slice(),
+                        vec![
+                            -0.15703115436774784,
+                            0.09938680656186574,
+                            -0.1783096608851831,
+                            0.13787789869909656,
+                            -0.17698461234977958,
+                            0.14916922821135814
+                        ]
+                    );
                     assert_sampled_gradient(gain.tensor(), &gain_tensor, &seed, |candidate| {
                         let candidate_param =
                             NamedParameter::from_tensor("gain.weight", candidate.clone()).unwrap();
