@@ -340,6 +340,133 @@ mod tests {
             }
         }
 
+        mod fn_from_weights {
+            use super::*;
+
+            mod when_input_width_does_not_match {
+                use super::*;
+                use crate::tensor::storage::Tensor;
+
+                #[test]
+                fn it_returns_error() {
+                    let q_weight = NamedParameter::from_tensor(
+                        "query",
+                        Tensor::from_vec(vec![1, 2], vec![0.; 2]).unwrap(),
+                    )
+                    .unwrap();
+                    let k_weight = NamedParameter::from_tensor(
+                        "key",
+                        Tensor::from_vec(vec![1, 2], vec![0.; 2]).unwrap(),
+                    )
+                    .unwrap();
+                    let v_weight = NamedParameter::from_tensor(
+                        "value",
+                        Tensor::from_vec(vec![3, 2], vec![0.; 6]).unwrap(),
+                    )
+                    .unwrap();
+
+                    let result = QkvProjections::from_weights(q_weight, k_weight, v_weight);
+
+                    assert!(result.is_err(), "{result:?}");
+                    assert_eq!(
+                        result.err().unwrap(),
+                        QkvError::BranchInputWidthMismatch {
+                            query: 1,
+                            key: 1,
+                            value: 3,
+                        }
+                    )
+                }
+            }
+
+            mod when_output_width_does_not_match {
+                use super::*;
+                use crate::tensor::storage::Tensor;
+
+                #[test]
+                fn it_returns_error() {
+                    let q_weight = NamedParameter::from_tensor(
+                        "query",
+                        Tensor::from_vec(vec![1, 2], vec![0.; 2]).unwrap(),
+                    )
+                    .unwrap();
+                    let k_weight = NamedParameter::from_tensor(
+                        "key",
+                        Tensor::from_vec(vec![1, 2], vec![0.; 2]).unwrap(),
+                    )
+                    .unwrap();
+                    let v_weight = NamedParameter::from_tensor(
+                        "value",
+                        Tensor::from_vec(vec![1, 3], vec![0.; 3]).unwrap(),
+                    )
+                    .unwrap();
+
+                    let result = QkvProjections::from_weights(q_weight, k_weight, v_weight);
+
+                    assert!(result.is_err(), "{result:?}");
+                    assert_eq!(
+                        result.err().unwrap(),
+                        QkvError::BranchOutputWidthMismatch {
+                            query: 2,
+                            key: 2,
+                            value: 3,
+                        }
+                    )
+                }
+            }
+
+            mod when_all_is_ok {
+                use super::*;
+                use crate::tensor::storage::Tensor;
+
+                #[test]
+                fn it_computes_qkv_projections() {
+                    let q_weight = NamedParameter::from_tensor(
+                        "query",
+                        Tensor::from_vec(vec![1, 2], vec![0.; 2]).unwrap(),
+                    )
+                    .unwrap();
+                    let k_weight = NamedParameter::from_tensor(
+                        "key",
+                        Tensor::from_vec(vec![1, 2], vec![0.; 2]).unwrap(),
+                    )
+                    .unwrap();
+                    let v_weight = NamedParameter::from_tensor(
+                        "value",
+                        Tensor::from_vec(vec![1, 2], vec![0.; 2]).unwrap(),
+                    )
+                    .unwrap();
+
+                    let result = QkvProjections::from_weights(
+                        q_weight.clone(),
+                        k_weight.clone(),
+                        v_weight.clone(),
+                    );
+
+                    assert!(result.is_ok(), "{result:?}");
+                    let result = result.as_ref().unwrap();
+                    assert_eq!(
+                        result.query,
+                        Linear::from_parameters(q_weight.clone(), None).unwrap()
+                    );
+                    assert_eq!(
+                        result.key,
+                        Linear::from_parameters(k_weight.clone(), None).unwrap()
+                    );
+                    assert_eq!(
+                        result.value,
+                        Linear::from_parameters(v_weight.clone(), None).unwrap()
+                    );
+                    assert_eq!(
+                        result.parameters,
+                        NamedParameters::try_new(vec![q_weight, k_weight, v_weight]).unwrap()
+                    );
+                    assert_eq!(result.model_width, 1);
+                    assert_eq!(result.head_width, 2);
+                }
+            }
+        }
+
         mod fn_forward_with_context {
             use super::*;
 
