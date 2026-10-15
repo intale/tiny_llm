@@ -437,6 +437,304 @@ mod tests {
     mod fn_scaled_dot_product_self_attention_with_context {
         use super::*;
 
+        mod when_some_tensor_rank_isnt_3 {
+            use super::*;
+
+            #[test]
+            fn it_returns_error() {
+                let q_param =
+                    TensorValue::parameter(Tensor::from_vec(vec![1, 1, 2], vec![0.; 2]).unwrap())
+                        .unwrap();
+                let k_param =
+                    TensorValue::parameter(Tensor::from_vec(vec![1, 1, 2], vec![0.; 2]).unwrap())
+                        .unwrap();
+                let v_param =
+                    TensorValue::parameter(Tensor::from_vec(vec![1, 2], vec![0.; 2]).unwrap())
+                        .unwrap();
+                let context = AutogradContext::recording();
+                let result = scaled_dot_product_self_attention_with_context(
+                    context, &q_param, &k_param, &v_param,
+                );
+
+                assert!(result.is_err(), "{result:?}");
+                assert_eq!(
+                    result.err().unwrap(),
+                    SelfAttentionError::InputRank {
+                        input: SelfAttentionInput::Value,
+                        rank: 2,
+                    }
+                );
+            }
+        }
+
+        mod when_query_and_key_batch_size_mismatch {
+            use super::*;
+
+            #[test]
+            fn it_returns_error() {
+                let q_param =
+                    TensorValue::parameter(Tensor::from_vec(vec![3, 1, 2], vec![0.; 6]).unwrap())
+                        .unwrap();
+                let k_param =
+                    TensorValue::parameter(Tensor::from_vec(vec![1, 1, 2], vec![0.; 2]).unwrap())
+                        .unwrap();
+                let v_param =
+                    TensorValue::parameter(Tensor::from_vec(vec![1, 1, 2], vec![0.; 2]).unwrap())
+                        .unwrap();
+                let context = AutogradContext::recording();
+                let result = scaled_dot_product_self_attention_with_context(
+                    context, &q_param, &k_param, &v_param,
+                );
+
+                assert!(result.is_err(), "{result:?}");
+                assert_eq!(
+                    result.err().unwrap(),
+                    SelfAttentionError::BatchMismatch {
+                        query: 3,
+                        key: 1,
+                        value: 1,
+                    }
+                );
+            }
+        }
+
+        mod when_query_and_value_batch_size_mismatch {
+            use super::*;
+
+            #[test]
+            fn it_returns_error() {
+                let q_param =
+                    TensorValue::parameter(Tensor::from_vec(vec![1, 1, 2], vec![0.; 2]).unwrap())
+                        .unwrap();
+                let k_param =
+                    TensorValue::parameter(Tensor::from_vec(vec![1, 1, 2], vec![0.; 2]).unwrap())
+                        .unwrap();
+                let v_param =
+                    TensorValue::parameter(Tensor::from_vec(vec![3, 1, 2], vec![0.; 6]).unwrap())
+                        .unwrap();
+                let context = AutogradContext::recording();
+                let result = scaled_dot_product_self_attention_with_context(
+                    context, &q_param, &k_param, &v_param,
+                );
+
+                assert!(result.is_err(), "{result:?}");
+                assert_eq!(
+                    result.err().unwrap(),
+                    SelfAttentionError::BatchMismatch {
+                        query: 1,
+                        key: 1,
+                        value: 3,
+                    }
+                );
+            }
+        }
+
+        mod when_query_and_key_tokens_size_mismatch {
+            use super::*;
+
+            #[test]
+            fn it_returns_error() {
+                let q_param =
+                    TensorValue::parameter(Tensor::from_vec(vec![1, 3, 2], vec![0.; 6]).unwrap())
+                        .unwrap();
+                let k_param =
+                    TensorValue::parameter(Tensor::from_vec(vec![1, 1, 2], vec![0.; 2]).unwrap())
+                        .unwrap();
+                let v_param =
+                    TensorValue::parameter(Tensor::from_vec(vec![1, 1, 2], vec![0.; 2]).unwrap())
+                        .unwrap();
+                let context = AutogradContext::recording();
+                let result = scaled_dot_product_self_attention_with_context(
+                    context, &q_param, &k_param, &v_param,
+                );
+
+                assert!(result.is_err(), "{result:?}");
+                assert_eq!(
+                    result.err().unwrap(),
+                    SelfAttentionError::TokenMismatch {
+                        query: 3,
+                        key: 1,
+                        value: 1,
+                    }
+                );
+            }
+        }
+
+        mod when_query_and_value_tokens_size_mismatch {
+            use super::*;
+
+            #[test]
+            fn it_returns_error() {
+                let q_param =
+                    TensorValue::parameter(Tensor::from_vec(vec![1, 1, 2], vec![0.; 2]).unwrap())
+                        .unwrap();
+                let k_param =
+                    TensorValue::parameter(Tensor::from_vec(vec![1, 1, 2], vec![0.; 2]).unwrap())
+                        .unwrap();
+                let v_param =
+                    TensorValue::parameter(Tensor::from_vec(vec![1, 3, 2], vec![0.; 6]).unwrap())
+                        .unwrap();
+                let context = AutogradContext::recording();
+                let result = scaled_dot_product_self_attention_with_context(
+                    context, &q_param, &k_param, &v_param,
+                );
+
+                assert!(result.is_err(), "{result:?}");
+                assert_eq!(
+                    result.err().unwrap(),
+                    SelfAttentionError::TokenMismatch {
+                        query: 1,
+                        key: 1,
+                        value: 3,
+                    }
+                );
+            }
+        }
+
+        mod when_tokens_is_0 {
+            use super::*;
+
+            #[test]
+            fn it_returns_error() {
+                let q_param =
+                    TensorValue::parameter(Tensor::from_vec(vec![1, 0, 2], vec![]).unwrap())
+                        .unwrap();
+                let k_param =
+                    TensorValue::parameter(Tensor::from_vec(vec![1, 0, 2], vec![]).unwrap())
+                        .unwrap();
+                let v_param =
+                    TensorValue::parameter(Tensor::from_vec(vec![1, 0, 2], vec![]).unwrap())
+                        .unwrap();
+                let context = AutogradContext::recording();
+                let result = scaled_dot_product_self_attention_with_context(
+                    context, &q_param, &k_param, &v_param,
+                );
+
+                assert!(result.is_err(), "{result:?}");
+                assert_eq!(
+                    result.err().unwrap(),
+                    SelfAttentionError::EmptyTokens
+                );
+            }
+        }
+
+        mod when_query_last_axis_is_0 {
+            use super::*;
+
+            #[test]
+            fn it_returns_error() {
+                let q_param =
+                    TensorValue::parameter(Tensor::from_vec(vec![1, 1, 0], vec![]).unwrap())
+                        .unwrap();
+                let k_param =
+                    TensorValue::parameter(Tensor::from_vec(vec![1, 1, 2], vec![0.; 2]).unwrap())
+                        .unwrap();
+                let v_param =
+                    TensorValue::parameter(Tensor::from_vec(vec![1, 1, 2], vec![0.; 2]).unwrap())
+                        .unwrap();
+                let context = AutogradContext::recording();
+                let result = scaled_dot_product_self_attention_with_context(
+                    context, &q_param, &k_param, &v_param,
+                );
+
+                assert!(result.is_err(), "{result:?}");
+                assert_eq!(
+                    result.err().unwrap(),
+                    SelfAttentionError::EmptyFeatureWidth {
+                        input: SelfAttentionInput::Query,
+                    }
+                );
+            }
+        }
+
+        mod when_key_last_axis_is_0 {
+            use super::*;
+
+            #[test]
+            fn it_returns_error() {
+                let q_param =
+                    TensorValue::parameter(Tensor::from_vec(vec![1, 1, 2], vec![0.; 2]).unwrap())
+                        .unwrap();
+                let k_param =
+                    TensorValue::parameter(Tensor::from_vec(vec![1, 1, 0], vec![]).unwrap())
+                        .unwrap();
+                let v_param =
+                    TensorValue::parameter(Tensor::from_vec(vec![1, 1, 2], vec![0.; 2]).unwrap())
+                        .unwrap();
+                let context = AutogradContext::recording();
+                let result = scaled_dot_product_self_attention_with_context(
+                    context, &q_param, &k_param, &v_param,
+                );
+
+                assert!(result.is_err(), "{result:?}");
+                assert_eq!(
+                    result.err().unwrap(),
+                    SelfAttentionError::EmptyFeatureWidth {
+                        input: SelfAttentionInput::Key,
+                    }
+                );
+            }
+        }
+
+        mod when_key_last_axis_does_not_match_key_last_axis {
+            use super::*;
+
+            #[test]
+            fn it_returns_error() {
+                let q_param =
+                    TensorValue::parameter(Tensor::from_vec(vec![1, 1, 2], vec![0.; 2]).unwrap())
+                        .unwrap();
+                let k_param =
+                    TensorValue::parameter(Tensor::from_vec(vec![1, 1, 3], vec![0.; 3]).unwrap())
+                        .unwrap();
+                let v_param =
+                    TensorValue::parameter(Tensor::from_vec(vec![1, 1, 2], vec![0.; 2]).unwrap())
+                        .unwrap();
+                let context = AutogradContext::recording();
+                let result = scaled_dot_product_self_attention_with_context(
+                    context, &q_param, &k_param, &v_param,
+                );
+
+                assert!(result.is_err(), "{result:?}");
+                assert_eq!(
+                    result.err().unwrap(),
+                    SelfAttentionError::QueryKeyWidthMismatch {
+                        query: 2,
+                        key: 3,
+                    }
+                );
+            }
+        }
+
+        mod when_value_last_axis_is_0 {
+            use super::*;
+
+            #[test]
+            fn it_returns_error() {
+                let q_param =
+                    TensorValue::parameter(Tensor::from_vec(vec![1, 1, 2], vec![0.; 2]).unwrap())
+                        .unwrap();
+                let k_param =
+                    TensorValue::parameter(Tensor::from_vec(vec![1, 1, 2], vec![0.; 2]).unwrap())
+                        .unwrap();
+                let v_param =
+                    TensorValue::parameter(Tensor::from_vec(vec![1, 1, 0], vec![]).unwrap())
+                        .unwrap();
+                let context = AutogradContext::recording();
+                let result = scaled_dot_product_self_attention_with_context(
+                    context, &q_param, &k_param, &v_param,
+                );
+
+                assert!(result.is_err(), "{result:?}");
+                assert_eq!(
+                    result.err().unwrap(),
+                    SelfAttentionError::EmptyFeatureWidth {
+                        input: SelfAttentionInput::Value,
+                    }
+                );
+            }
+        }
+
         mod feed_forward_calculation {
             use super::*;
 
