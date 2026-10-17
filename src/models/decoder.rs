@@ -1342,3 +1342,987 @@ impl DecoderModel {
             .sum()
     }
 }
+
+#[cfg(test)]
+mod course_tests {
+    use super::*;
+    use crate::support::gradcheck::sampled_tensor_gradient_check;
+    use crate::autograd::tensor_core::GraphRetention;
+    use crate::tensor::storage::Tensor;
+    use crate::training::adam_w::{AdamW, AdamWConfig};
+
+    const STEP: f64 = 1e-6;
+    const TOLERANCE: f64 = 2e-5;
+
+    fn config(layers: usize) -> DecoderModelConfig {
+        DecoderModelConfig::new(5, 4, 2, 4, layers, 4, 10_000.0, 1e-6)
+    }
+
+    fn tensor(shape: &[usize], values: &[f64]) -> Tensor {
+        Tensor::from_vec(shape.to_vec(), values.to_vec()).unwrap()
+    }
+
+    fn model(layers: usize, seed: u64) -> DecoderModel {
+        DecoderModel::new(config(layers), &mut SplitMix64::from_seed(seed)).unwrap()
+    }
+
+    fn copied_parameters(model: &DecoderModel) -> Vec<NamedParameter> {
+        model
+            .parameters()
+            .iter()
+            .map(|parameter| {
+                NamedParameter::from_tensor(parameter.name(), parameter.tensor().value_snapshot())
+                    .unwrap()
+            })
+            .collect()
+    }
+
+    #[derive(Clone, Debug)]
+    struct BorrowedParameterFixture {
+        names: Vec<String>,
+        tensors: Vec<Tensor>,
+    }
+
+    impl DecoderParameterSource for BorrowedParameterFixture {
+        fn len(&self) -> usize {
+            self.tensors.len()
+        }
+
+        fn name(&self, index: usize) -> &str {
+            &self.names[index]
+        }
+
+        fn with_tensor<R>(&self, index: usize, inspect: impl FnOnce(&Tensor) -> R) -> R {
+            inspect(&self.tensors[index])
+        }
+    }
+
+    impl BorrowedParameterFixture {
+        fn from_model(model: &DecoderModel) -> Self {
+            Self {
+                names: model
+                    .parameters()
+                    .iter()
+                    .map(|parameter| parameter.name().to_owned())
+                    .collect(),
+                tensors: model
+                    .parameters()
+                    .iter()
+                    .map(|parameter| parameter.tensor().value_snapshot())
+                    .collect(),
+            }
+        }
+
+        fn replace_shape(&mut self, index: usize, shape: &[usize]) {
+            let elements = shape.iter().copied().product();
+            self.tensors[index] = Tensor::from_vec(shape.to_vec(), vec![0.0; elements]).unwrap();
+        }
+
+        fn storage_addresses(&self) -> Vec<usize> {
+            self.tensors
+                .iter()
+                .map(|tensor| tensor.as_slice().as_ptr() as usize)
+                .collect()
+        }
+    }
+
+    fn borrowed_layout_error(changes: &[(usize, &[usize])]) -> DecoderModelError {
+        let mut parameters = BorrowedParameterFixture::from_model(&model(1, 33));
+        for &(index, shape) in changes {
+            parameters.replace_shape(index, shape);
+        }
+        validate_parameter_layout(config(1), &parameters).unwrap_err()
+    }
+
+    fn zero_layer_model(table: Tensor, gain: Tensor) -> DecoderModel {
+        let embedding = Embedding::from_parameter(
+            NamedParameter::from_tensor("token_embedding.weight", table).unwrap(),
+        )
+            .unwrap();
+        let final_norm = RmsNorm::from_gain(
+            NamedParameter::from_tensor("final_norm.gain", gain).unwrap(),
+            1e-6,
+        )
+            .unwrap();
+        DecoderModel::from_parts(config(0), embedding, Vec::new(), final_norm).unwrap()
+    }
+
+    #[test]
+    fn initialization_is_transactional_reproducible_and_stably_named() {
+        let mut rejected = SplitMix64::from_seed(32);
+        let state = rejected.state();
+        assert_eq!(
+            DecoderModel::new(
+                DecoderModelConfig::new(0, 4, 2, 4, 2, 4, 10_000.0, 1e-6),
+                &mut rejected,
+            )
+                .unwrap_err(),
+            DecoderModelError::EmptyVocabulary
+        );
+        assert_eq!(rejected.state(), state);
+
+        let left = model(2, 32);
+        let right = model(2, 32);
+        assert_eq!(left.parameters().len(), 20);
+        assert_eq!(left.parameter_count(), 264);
+        assert_eq!(
+            left.parameters()
+                .iter()
+                .map(NamedParameter::name)
+                .collect::<Vec<_>>(),
+            [
+                "token_embedding.weight",
+                "blocks.0.attention_norm.gain",
+                "blocks.0.attention.query.weight",
+                "blocks.0.attention.key.weight",
+                "blocks.0.attention.value.weight",
+                "blocks.0.attention.output.weight",
+                "blocks.0.ffn_norm.gain",
+                "blocks.0.ffn.gate.weight",
+                "blocks.0.ffn.up.weight",
+                "blocks.0.ffn.down.weight",
+                "blocks.1.attention_norm.gain",
+                "blocks.1.attention.query.weight",
+                "blocks.1.attention.key.weight",
+                "blocks.1.attention.value.weight",
+                "blocks.1.attention.output.weight",
+                "blocks.1.ffn_norm.gain",
+                "blocks.1.ffn.gate.weight",
+                "blocks.1.ffn.up.weight",
+                "blocks.1.ffn.down.weight",
+                "final_norm.gain",
+            ]
+        );
+        for (left, right) in left.parameters().iter().zip(right.parameters()) {
+            assert_eq!(&*left.tensor().value(), &*right.tensor().value());
+            assert!(!left.tensor().is_same_node(right.tensor()));
+            assert!(!left.name().contains("bias"));
+        }
+        assert!(
+            left.embedding()
+                .table()
+                .tensor()
+                .is_same_node(left.tied_embedding().tensor())
+        );
+    }
+
+    #[test]
+    fn parameter_reconstruction_rebinds_every_component_and_rejects_drift() {
+        let original = model(1, 33);
+        let ids = [0, 1, 2];
+        let expected_logits = original
+            .forward(&ids, &[1, 3])
+            .unwrap()
+            .into_logits()
+            .value_snapshot();
+        let rebuilt =
+            DecoderModel::from_parameters(config(1), copied_parameters(&original)).unwrap();
+
+        let rebuilt_logits = rebuilt.forward(&ids, &[1, 3]).unwrap().into_logits();
+        assert_eq!(&*rebuilt_logits.value(), &expected_logits);
+        assert!(
+            rebuilt
+                .embedding()
+                .table()
+                .tensor()
+                .is_same_node(rebuilt.parameters()[0].tensor())
+        );
+        for (component, listed) in rebuilt.blocks()[0]
+            .parameters()
+            .iter()
+            .zip(&rebuilt.parameters()[1..10])
+        {
+            assert!(component.tensor().is_same_node(listed.tensor()));
+        }
+        assert!(
+            rebuilt
+                .final_norm()
+                .gain()
+                .tensor()
+                .is_same_node(rebuilt.parameters().last().unwrap().tensor())
+        );
+        assert!(rebuilt.parameters().iter().all(|parameter| {
+            parameter
+                .tensor()
+                .gradient()
+                .is_some_and(|gradient| gradient.as_slice().iter().all(|value| *value == 0.0))
+        }));
+
+        let mut missing = copied_parameters(&original);
+        missing.pop();
+        assert_eq!(
+            DecoderModel::from_parameters(config(1), missing).unwrap_err(),
+            DecoderModelError::ParameterCountMismatch {
+                expected: 11,
+                actual: 10,
+            }
+        );
+
+        let mut renamed = copied_parameters(&original);
+        renamed[1] = NamedParameter::from_tensor(
+            "blocks.0.wrong.gain",
+            renamed[1].tensor().value_snapshot(),
+        )
+            .unwrap();
+        assert_eq!(
+            DecoderModel::from_parameters(config(1), renamed).unwrap_err(),
+            DecoderModelError::ParameterNameMismatch {
+                index: 1,
+                expected: "blocks.0.attention_norm.gain".to_owned(),
+                actual: "blocks.0.wrong.gain".to_owned(),
+            }
+        );
+
+        let mut wrong_shape = copied_parameters(&original);
+        wrong_shape[2] =
+            NamedParameter::from_tensor("blocks.0.attention.query.weight", tensor(&[1], &[0.0]))
+                .unwrap();
+        assert!(matches!(
+            DecoderModel::from_parameters(config(1), wrong_shape),
+            Err(DecoderModelError::Block {
+                layer: 0,
+                source: DecoderBlockError::Attention(_),
+            })
+        ));
+    }
+
+    #[test]
+    fn borrowed_layout_validation_preserves_storage_and_boundary_precedence() {
+        let valid = BorrowedParameterFixture::from_model(&model(1, 33));
+        let addresses = valid.storage_addresses();
+        let bits = valid
+            .tensors
+            .iter()
+            .flat_map(|tensor| tensor.as_slice().iter().map(|value| value.to_bits()))
+            .collect::<Vec<_>>();
+        validate_parameter_layout(config(1), &valid).unwrap();
+        assert_eq!(valid.storage_addresses(), addresses);
+        assert_eq!(
+            valid
+                .tensors
+                .iter()
+                .flat_map(|tensor| tensor.as_slice().iter().map(|value| value.to_bits()))
+                .collect::<Vec<_>>(),
+            bits
+        );
+
+        let mut invalid_config = valid.clone();
+        invalid_config.names[1] = "blocks.0.wrong.gain".to_owned();
+        invalid_config.replace_shape(0, &[4]);
+        assert_eq!(
+            validate_parameter_layout(
+                DecoderModelConfig::new(0, 4, 2, 4, 1, 4, 10_000.0, 1e-6),
+                &invalid_config,
+            ),
+            Err(DecoderModelError::EmptyVocabulary)
+        );
+
+        let mut wrong_count = invalid_config.clone();
+        wrong_count.tensors.pop();
+        assert_eq!(
+            validate_parameter_layout(config(1), &wrong_count),
+            Err(DecoderModelError::ParameterCountMismatch {
+                expected: 11,
+                actual: 10,
+            })
+        );
+
+        assert_eq!(
+            validate_parameter_layout(config(1), &invalid_config),
+            Err(DecoderModelError::ParameterNameMismatch {
+                index: 1,
+                expected: "blocks.0.attention_norm.gain".to_owned(),
+                actual: "blocks.0.wrong.gain".to_owned(),
+            })
+        );
+
+        let mut local_before_outer = valid.clone();
+        local_before_outer.replace_shape(0, &[6, 4]);
+        local_before_outer.replace_shape(10, &[4, 1]);
+        assert_eq!(
+            validate_parameter_layout(config(1), &local_before_outer),
+            Err(DecoderModelError::FinalNorm(RmsNormError::GainRank {
+                shape: vec![4, 1],
+            }))
+        );
+
+        let zero_layer = BorrowedParameterFixture::from_model(&model(0, 33));
+        validate_parameter_layout(config(0), &zero_layer).unwrap();
+        let mut extra_output_head = zero_layer;
+        extra_output_head
+            .names
+            .insert(1, "lm_head.weight".to_owned());
+        extra_output_head
+            .tensors
+            .insert(1, tensor(&[4, 5], &[0.0; 20]));
+        assert_eq!(
+            validate_parameter_layout(config(0), &extra_output_head),
+            Err(DecoderModelError::ParameterCountMismatch {
+                expected: 2,
+                actual: 3,
+            })
+        );
+    }
+
+    #[test]
+    fn borrowed_layout_validation_preserves_component_error_taxonomy() {
+        assert_eq!(
+            borrowed_layout_error(&[(0, &[5])]),
+            DecoderModelError::Embedding(EmbeddingError::TableRank { rank: 1 })
+        );
+        assert_eq!(
+            borrowed_layout_error(&[(0, &[0, 4])]),
+            DecoderModelError::Embedding(EmbeddingError::EmptyVocabulary)
+        );
+        assert_eq!(
+            borrowed_layout_error(&[(0, &[5, 0])]),
+            DecoderModelError::Embedding(EmbeddingError::ZeroEmbeddingWidth)
+        );
+        assert_eq!(
+            borrowed_layout_error(&[(1, &[2, 2])]),
+            DecoderModelError::Block {
+                layer: 0,
+                source: DecoderBlockError::AttentionNorm(RmsNormError::GainRank {
+                    shape: vec![2, 2],
+                }),
+            }
+        );
+        assert_eq!(
+            borrowed_layout_error(&[(2, &[4])]),
+            DecoderModelError::Block {
+                layer: 0,
+                source: DecoderBlockError::Attention(MultiHeadAttentionError::QkvProjection(
+                    QkvError::Projection {
+                        projection: QkvProjection::Query,
+                        source: LinearError::WeightRank { rank: 1 },
+                    },
+                )),
+            }
+        );
+        assert_eq!(
+            borrowed_layout_error(&[(3, &[6, 4])]),
+            DecoderModelError::Block {
+                layer: 0,
+                source: DecoderBlockError::Attention(MultiHeadAttentionError::QkvProjection(
+                    QkvError::BranchInputWidthMismatch {
+                        query: 4,
+                        key: 6,
+                        value: 4,
+                    },
+                )),
+            }
+        );
+        assert_eq!(
+            borrowed_layout_error(&[(3, &[4, 6])]),
+            DecoderModelError::Block {
+                layer: 0,
+                source: DecoderBlockError::Attention(MultiHeadAttentionError::QkvProjection(
+                    QkvError::BranchOutputWidthMismatch {
+                        query: 4,
+                        key: 6,
+                        value: 4,
+                    },
+                )),
+            }
+        );
+        assert_eq!(
+            borrowed_layout_error(&[(5, &[4])]),
+            DecoderModelError::Block {
+                layer: 0,
+                source: DecoderBlockError::Attention(MultiHeadAttentionError::OutputProjection(
+                    LinearError::WeightRank { rank: 1 }
+                ),),
+            }
+        );
+        assert_eq!(
+            borrowed_layout_error(&[(2, &[5, 5]), (3, &[5, 5]), (4, &[5, 5]), (5, &[5, 5])]),
+            DecoderModelError::Block {
+                layer: 0,
+                source: DecoderBlockError::Attention(
+                    MultiHeadAttentionError::ModelWidthNotDivisible {
+                        model_width: 5,
+                        heads: 2,
+                    },
+                ),
+            }
+        );
+        assert_eq!(
+            borrowed_layout_error(&[(2, &[6, 6]), (3, &[6, 6]), (4, &[6, 6]), (5, &[6, 6])]),
+            DecoderModelError::Block {
+                layer: 0,
+                source: DecoderBlockError::Attention(MultiHeadAttentionError::OddHeadWidth {
+                    head_width: 3,
+                }),
+            }
+        );
+        assert_eq!(
+            borrowed_layout_error(&[(2, &[4, 6]), (3, &[4, 6]), (4, &[4, 6])]),
+            DecoderModelError::Block {
+                layer: 0,
+                source: DecoderBlockError::Attention(
+                    MultiHeadAttentionError::QkvOutputWidthMismatch {
+                        model_width: 4,
+                        projected_width: 6,
+                    },
+                ),
+            }
+        );
+        assert_eq!(
+            borrowed_layout_error(&[(5, &[6, 4])]),
+            DecoderModelError::Block {
+                layer: 0,
+                source: DecoderBlockError::Attention(
+                    MultiHeadAttentionError::OutputInputWidthMismatch {
+                        expected: 4,
+                        actual: 6,
+                    },
+                ),
+            }
+        );
+        assert_eq!(
+            borrowed_layout_error(&[(5, &[4, 6])]),
+            DecoderModelError::Block {
+                layer: 0,
+                source: DecoderBlockError::Attention(
+                    MultiHeadAttentionError::OutputWidthMismatch {
+                        expected: 4,
+                        actual: 6,
+                    },
+                ),
+            }
+        );
+        assert_eq!(
+            borrowed_layout_error(&[(6, &[2, 2])]),
+            DecoderModelError::Block {
+                layer: 0,
+                source: DecoderBlockError::FeedForwardNorm(RmsNormError::GainRank {
+                    shape: vec![2, 2],
+                }),
+            }
+        );
+        assert_eq!(
+            borrowed_layout_error(&[(7, &[4])]),
+            DecoderModelError::Block {
+                layer: 0,
+                source: DecoderBlockError::FeedForward(SwiGluError::Projection {
+                    projection: SwiGluProjection::Gate,
+                    source: LinearError::WeightRank { rank: 1 },
+                }),
+            }
+        );
+        assert_eq!(
+            borrowed_layout_error(&[(8, &[6, 4])]),
+            DecoderModelError::Block {
+                layer: 0,
+                source: DecoderBlockError::FeedForward(SwiGluError::BranchInputWidthMismatch {
+                    gate: 4,
+                    up: 6,
+                }),
+            }
+        );
+        assert_eq!(
+            borrowed_layout_error(&[(8, &[4, 6])]),
+            DecoderModelError::Block {
+                layer: 0,
+                source: DecoderBlockError::FeedForward(SwiGluError::BranchHiddenWidthMismatch {
+                    gate: 4,
+                    up: 6,
+                }),
+            }
+        );
+        assert_eq!(
+            borrowed_layout_error(&[(9, &[6, 4])]),
+            DecoderModelError::Block {
+                layer: 0,
+                source: DecoderBlockError::FeedForward(SwiGluError::DownInputWidthMismatch {
+                    hidden: 4,
+                    down: 6,
+                }),
+            }
+        );
+        for (index, shape, component, actual) in [
+            (1, &[6][..], DecoderBlockComponent::AttentionNorm, 6),
+            (6, &[6][..], DecoderBlockComponent::FeedForwardNorm, 6),
+        ] {
+            assert_eq!(
+                borrowed_layout_error(&[(index, shape)]),
+                DecoderModelError::Block {
+                    layer: 0,
+                    source: DecoderBlockError::ComponentWidthMismatch {
+                        component,
+                        expected: 4,
+                        actual,
+                    },
+                }
+            );
+        }
+        assert_eq!(
+            borrowed_layout_error(&[(7, &[6, 4]), (8, &[6, 4])]),
+            DecoderModelError::Block {
+                layer: 0,
+                source: DecoderBlockError::ComponentWidthMismatch {
+                    component: DecoderBlockComponent::FeedForwardInput,
+                    expected: 4,
+                    actual: 6,
+                },
+            }
+        );
+        assert_eq!(
+            borrowed_layout_error(&[(9, &[4, 6])]),
+            DecoderModelError::Block {
+                layer: 0,
+                source: DecoderBlockError::ComponentWidthMismatch {
+                    component: DecoderBlockComponent::FeedForwardOutput,
+                    expected: 4,
+                    actual: 6,
+                },
+            }
+        );
+        assert_eq!(
+            borrowed_layout_error(&[(10, &[2, 2])]),
+            DecoderModelError::FinalNorm(RmsNormError::GainRank { shape: vec![2, 2] })
+        );
+
+        assert_eq!(
+            borrowed_layout_error(&[(0, &[6, 4])]),
+            DecoderModelError::EmbeddingVocabularyMismatch {
+                expected: 5,
+                actual: 6,
+            }
+        );
+        assert_eq!(
+            borrowed_layout_error(&[(0, &[5, 6])]),
+            DecoderModelError::EmbeddingWidthMismatch {
+                expected: 4,
+                actual: 6,
+            }
+        );
+        assert_eq!(
+            borrowed_layout_error(&[
+                (1, &[8]),
+                (2, &[8, 8]),
+                (3, &[8, 8]),
+                (4, &[8, 8]),
+                (5, &[8, 8]),
+                (6, &[8]),
+                (7, &[8, 4]),
+                (8, &[8, 4]),
+                (9, &[4, 8]),
+            ]),
+            DecoderModelError::BlockModelWidthMismatch {
+                layer: 0,
+                expected: 4,
+                actual: 8,
+            }
+        );
+        assert_eq!(
+            borrowed_layout_error(&[(7, &[4, 6]), (8, &[4, 6]), (9, &[6, 4])]),
+            DecoderModelError::BlockFeedForwardWidthMismatch {
+                layer: 0,
+                expected: 4,
+                actual: 6,
+            }
+        );
+        assert_eq!(
+            borrowed_layout_error(&[(10, &[6])]),
+            DecoderModelError::FinalNormWidthMismatch {
+                expected: 4,
+                actual: 6,
+            }
+        );
+    }
+
+    #[test]
+    fn every_parameter_slot_reports_its_exact_rank_owner() {
+        let qkv_rank = |projection| DecoderModelError::Block {
+            layer: 0,
+            source: DecoderBlockError::Attention(MultiHeadAttentionError::QkvProjection(
+                QkvError::Projection {
+                    projection,
+                    source: LinearError::WeightRank { rank: 1 },
+                },
+            )),
+        };
+        let swiglu_rank = |projection| DecoderModelError::Block {
+            layer: 0,
+            source: DecoderBlockError::FeedForward(SwiGluError::Projection {
+                projection,
+                source: LinearError::WeightRank { rank: 1 },
+            }),
+        };
+        let cases = vec![
+            (
+                0,
+                &[4][..],
+                DecoderModelError::Embedding(EmbeddingError::TableRank { rank: 1 }),
+            ),
+            (
+                1,
+                &[2, 2][..],
+                DecoderModelError::Block {
+                    layer: 0,
+                    source: DecoderBlockError::AttentionNorm(RmsNormError::GainRank {
+                        shape: vec![2, 2],
+                    }),
+                },
+            ),
+            (2, &[4][..], qkv_rank(QkvProjection::Query)),
+            (3, &[4][..], qkv_rank(QkvProjection::Key)),
+            (4, &[4][..], qkv_rank(QkvProjection::Value)),
+            (
+                5,
+                &[4][..],
+                DecoderModelError::Block {
+                    layer: 0,
+                    source: DecoderBlockError::Attention(
+                        MultiHeadAttentionError::OutputProjection(LinearError::WeightRank {
+                            rank: 1,
+                        }),
+                    ),
+                },
+            ),
+            (
+                6,
+                &[2, 2][..],
+                DecoderModelError::Block {
+                    layer: 0,
+                    source: DecoderBlockError::FeedForwardNorm(RmsNormError::GainRank {
+                        shape: vec![2, 2],
+                    }),
+                },
+            ),
+            (7, &[4][..], swiglu_rank(SwiGluProjection::Gate)),
+            (8, &[4][..], swiglu_rank(SwiGluProjection::Up)),
+            (9, &[4][..], swiglu_rank(SwiGluProjection::Down)),
+            (
+                10,
+                &[2, 2][..],
+                DecoderModelError::FinalNorm(RmsNormError::GainRank { shape: vec![2, 2] }),
+            ),
+        ];
+        for (index, shape, expected) in cases {
+            assert_eq!(borrowed_layout_error(&[(index, shape)]), expected);
+        }
+    }
+
+    #[test]
+    fn rope_specification_errors_precede_later_block_and_model_mismatches() {
+        let overflowing_config = DecoderModelConfig::new(5, 4, 2, 4, 1, usize::MAX, 10_000.0, 1e-6);
+        let expected = DecoderModelError::Block {
+            layer: 0,
+            source: DecoderBlockError::Attention(MultiHeadAttentionError::RotaryConfiguration(
+                crate::attention::rope::RopeError::TableSizeOverflow {
+                    positions: usize::MAX,
+                    pairs: 2,
+                },
+            )),
+        };
+        let mut outer_mismatch = BorrowedParameterFixture::from_model(&model(1, 33));
+        for index in 2..=5 {
+            outer_mismatch.replace_shape(index, &[8, 8]);
+        }
+        assert_eq!(
+            validate_parameter_layout(overflowing_config, &outer_mismatch),
+            Err(expected.clone())
+        );
+
+        outer_mismatch.replace_shape(7, &[4]);
+        assert_eq!(
+            validate_parameter_layout(overflowing_config, &outer_mismatch),
+            Err(expected)
+        );
+    }
+
+    #[test]
+    fn later_layer_local_error_precedes_an_earlier_decoder_wide_mismatch() {
+        let mut parameters = BorrowedParameterFixture::from_model(&model(2, 33));
+        for (index, shape) in [
+            (1, &[8][..]),
+            (2, &[8, 8][..]),
+            (3, &[8, 8][..]),
+            (4, &[8, 8][..]),
+            (5, &[8, 8][..]),
+            (6, &[8][..]),
+            (7, &[8, 4][..]),
+            (8, &[8, 4][..]),
+            (9, &[4, 8][..]),
+            (11, &[4][..]),
+        ] {
+            parameters.replace_shape(index, shape);
+        }
+        assert_eq!(
+            validate_parameter_layout(config(2), &parameters),
+            Err(DecoderModelError::Block {
+                layer: 1,
+                source: DecoderBlockError::Attention(MultiHeadAttentionError::QkvProjection(
+                    QkvError::Projection {
+                        projection: QkvProjection::Query,
+                        source: LinearError::WeightRank { rank: 1 },
+                    }
+                ),),
+            })
+        );
+    }
+
+    #[test]
+    fn adamw_updates_live_registry_component_and_tied_handles_together() {
+        let model = model(1, 33);
+        let nodes = model
+            .parameters()
+            .iter()
+            .map(|parameter| parameter.tensor().clone())
+            .collect::<Vec<_>>();
+        let embedding_before = model.tied_embedding().tensor().value_snapshot();
+        let embedding = model.tied_embedding();
+        let seed = Tensor::from_vec(
+            embedding.tensor().shape(),
+            vec![0.25; embedding.tensor().value().len()],
+        )
+            .unwrap();
+        embedding
+            .tensor()
+            .backward_with_seed(&seed.view(), GraphRetention::Retain)
+            .unwrap();
+
+        let mut optimizer = AdamW::new(AdamWConfig::new(0.01, 0.9, 0.999, 1e-8, 0.0).unwrap());
+        optimizer.step(model.parameters()).unwrap();
+
+        assert!(
+            model
+                .parameters()
+                .iter()
+                .zip(&nodes)
+                .all(|(parameter, node)| parameter.tensor().is_same_node(node))
+        );
+        assert!(
+            model
+                .embedding()
+                .table()
+                .tensor()
+                .is_same_node(model.tied_embedding().tensor())
+        );
+        assert_ne!(&*model.tied_embedding().tensor().value(), &embedding_before);
+        assert_eq!(
+            &*model.embedding().table().tensor().value(),
+            &*model.parameters()[0].tensor().value()
+        );
+    }
+
+    #[test]
+    fn zero_one_and_two_block_models_preserve_shapes_and_depth_evidence() {
+        let ids = [0, 1, 2, 3, 4, 0];
+        for layers in 0..=2 {
+            let pass = model(layers, 7).forward(&ids, &[2, 3]).unwrap();
+            assert_eq!(pass.embedding().shape(), [2, 3, 4]);
+            assert_eq!(pass.blocks().len(), layers);
+            assert_eq!(pass.final_norm().output().shape(), [2, 3, 4]);
+            assert_eq!(pass.logits().shape(), [2, 3, 5]);
+            assert!(
+                pass.logits()
+                    .value()
+                    .as_slice()
+                    .iter()
+                    .all(|x| x.is_finite())
+            );
+        }
+    }
+
+    #[test]
+    fn future_token_changes_cannot_change_earlier_logits() {
+        let model = model(2, 19);
+        let original = model.forward(&[0, 1, 2], &[1, 3]).unwrap();
+        let changed = model.forward(&[0, 1, 4], &[1, 3]).unwrap();
+        let original = original.logits().value();
+        let changed = changed.logits().value();
+        assert_eq!(&original.as_slice()[..10], &changed.as_slice()[..10]);
+        assert_ne!(&original.as_slice()[10..], &changed.as_slice()[10..]);
+    }
+
+    fn role_gradient(include_lookup: bool, include_head: bool) -> Vec<f64> {
+        let values = [
+            0.8, -0.2, 0.1, 0.4, -0.3, 0.7, 0.2, -0.1, 0.5, 0.1, -0.6, 0.3, -0.4, -0.2, 0.9, 0.1,
+            0.2, 0.3, -0.1, 0.8,
+        ];
+        let table = NamedParameter::from_tensor("token_embedding.weight", tensor(&[5, 4], &values))
+            .unwrap();
+        let embedding = Embedding::from_parameter(table.clone()).unwrap();
+        let lookup = embedding.forward(&[0, 1], &[1, 2]).unwrap();
+        let lookup = if include_lookup {
+            lookup
+        } else {
+            lookup.detach()
+        };
+        let norm = RmsNorm::new("final_norm.gain", 4, 1e-6)
+            .unwrap()
+            .forward(&lookup)
+            .unwrap();
+        let head_source = if include_head {
+            table.tensor().clone()
+        } else {
+            table.tensor().detach()
+        };
+        let logits = norm.matmul(&head_source.transpose(0, 1).unwrap()).unwrap();
+        logits
+            .indexed_mean_nll(2, &[1, 2])
+            .unwrap()
+            .backward_with_seed(&tensor(&[], &[1.0]).view(), GraphRetention::Retain)
+            .unwrap();
+        table.tensor().gradient().map_or_else(
+            || vec![0.0; values.len()],
+            |gradient| gradient.as_slice().to_vec(),
+        )
+    }
+
+    #[test]
+    fn tied_table_accumulates_lookup_and_vocabulary_projection_gradients() {
+        let full = role_gradient(true, true);
+        let lookup = role_gradient(true, false);
+        let head = role_gradient(false, true);
+        for index in 0..full.len() {
+            assert!((full[index] - lookup[index] - head[index]).abs() < 1e-12);
+        }
+        assert!(lookup[8..].iter().all(|value| value.to_bits() == 0));
+        assert!(
+            head.chunks_exact(4)
+                .all(|row| row.iter().any(|value| value.abs() > 1e-12))
+        );
+    }
+
+    #[test]
+    fn tied_table_and_final_gain_match_all_coordinate_central_differences() {
+        let table_values = [
+            0.8, -0.2, 0.1, 0.4, -0.3, 0.7, 0.2, -0.1, 0.5, 0.1, -0.6, 0.3, -0.4, -0.2, 0.9, 0.1,
+            0.2, 0.3, -0.1, 0.8,
+        ];
+        let gain_values = [1.0, 0.9, 1.1, 0.8];
+        let model = zero_layer_model(tensor(&[5, 4], &table_values), tensor(&[4], &gain_values));
+        model
+            .loss(&[0, 1], &[1, 2], &[1, 2])
+            .unwrap()
+            .backward()
+            .unwrap();
+        let table_gradient = model.tied_embedding().tensor().gradient().unwrap();
+        let gain_gradient = model.final_norm().gain().tensor().gradient().unwrap();
+
+        let table_report = sampled_tensor_gradient_check(
+            &mut tensor(&[5, 4], &table_values),
+            &table_gradient.view(),
+            STEP,
+            TOLERANCE,
+            table_values.len(),
+            |candidate| {
+                zero_layer_model(candidate.clone(), tensor(&[4], &gain_values))
+                    .loss(&[0, 1], &[1, 2], &[1, 2])
+                    .unwrap()
+                    .value()
+                    .as_slice()[0]
+            },
+        )
+            .unwrap();
+        assert!(table_report.passed);
+
+        let gain_report = sampled_tensor_gradient_check(
+            &mut tensor(&[4], &gain_values),
+            &gain_gradient.view(),
+            STEP,
+            TOLERANCE,
+            gain_values.len(),
+            |candidate| {
+                zero_layer_model(tensor(&[5, 4], &table_values), candidate.clone())
+                    .loss(&[0, 1], &[1, 2], &[1, 2])
+                    .unwrap()
+                    .value()
+                    .as_slice()[0]
+            },
+        )
+            .unwrap();
+        assert!(gain_report.passed);
+    }
+
+    #[test]
+    fn multi_block_loss_reaches_every_parameter_with_finite_gradients() {
+        let model = model(2, 23);
+        model
+            .loss(&[0, 1, 2], &[1, 3], &[1, 2, 3])
+            .unwrap()
+            .backward()
+            .unwrap();
+        assert!(model.parameters().iter().all(|parameter| {
+            parameter
+                .tensor()
+                .gradient()
+                .is_some_and(|gradient| gradient.as_slice().iter().all(|value| value.is_finite()))
+        }));
+    }
+
+    #[test]
+    fn configuration_component_input_and_target_errors_are_specific() {
+        let mut rng = SplitMix64::from_seed(1);
+        assert_eq!(
+            DecoderModel::new(
+                DecoderModelConfig::new(5, 4, 0, 4, 0, 4, 10_000.0, 1e-6),
+                &mut rng,
+            )
+                .unwrap_err(),
+            DecoderModelError::ZeroHeadCount
+        );
+        assert_eq!(
+            DecoderModel::new(
+                DecoderModelConfig::new(5, 6, 2, 4, 0, 4, 10_000.0, 1e-6),
+                &mut rng,
+            )
+                .unwrap_err(),
+            DecoderModelError::OddHeadWidth { head_width: 3 }
+        );
+        let model = model(0, 1);
+        assert_eq!(
+            model.forward(&[0], &[1]).unwrap_err(),
+            DecoderModelError::TokenRank { rank: 1 }
+        );
+        assert_eq!(
+            model.forward(&[], &[0, 1]).unwrap_err(),
+            DecoderModelError::EmptyBatch
+        );
+        assert_eq!(
+            model.forward(&[], &[1, 0]).unwrap_err(),
+            DecoderModelError::EmptyTokens
+        );
+        assert_eq!(
+            model.forward(&[0; 5], &[1, 5]).unwrap_err(),
+            DecoderModelError::ContextLengthExceeded {
+                tokens: 5,
+                max_positions: 4,
+            }
+        );
+        assert_eq!(
+            model.forward(&[0], &[1, 2]).unwrap_err(),
+            DecoderModelError::TokenCountMismatch {
+                expected: 2,
+                actual: 1,
+            }
+        );
+        assert_eq!(
+            model.forward(&[0, 5], &[1, 2]).unwrap_err(),
+            DecoderModelError::Embedding(EmbeddingError::TokenIdOutOfBounds {
+                position: 1,
+                id: 5,
+                vocabulary_size: 5,
+            })
+        );
+        assert_eq!(
+            model.loss(&[0, 1], &[1, 2], &[1]).unwrap_err(),
+            DecoderModelError::TargetCountMismatch {
+                expected: 2,
+                actual: 1,
+            }
+        );
+        assert_eq!(
+            model.loss(&[0, 1], &[1, 2], &[1, 5]).unwrap_err(),
+            DecoderModelError::TargetIdOutOfBounds {
+                position: 1,
+                id: 5,
+                vocabulary_size: 5,
+            }
+        );
+    }
+}
