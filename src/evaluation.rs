@@ -270,7 +270,6 @@ impl From<BigramError> for EvaluationError {
     }
 }
 
-// region:evaluation-provenance
 /// Caller-supplied identifiers and context metadata shared by report participants.
 ///
 /// Construction proves only that the three identifier strings are nonblank and
@@ -434,7 +433,6 @@ impl<'a> FrozenBigram<'a> {
         self.provenance
     }
 }
-// endregion:evaluation-provenance
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ModelScore {
@@ -592,7 +590,6 @@ impl FinalEvaluationReport {
     }
 }
 
-// region:inspected-test-epoch
 #[derive(Debug)]
 struct TestEvidence {
     document_ids: Vec<String>,
@@ -762,7 +759,6 @@ impl<'a> InspectedTestEpoch<'a> {
         self.evidence
     }
 }
-// endregion:inspected-test-epoch
 
 fn require_matching_provenance_assertions(
     expected: &EvaluationProvenance,
@@ -887,7 +883,6 @@ fn score_bigram(
     )
 }
 
-// region:once-only-final-evaluation
 /// Owns one test epoch and consumes its local scoring permission on first use.
 ///
 /// This type is deliberately not cloneable. It enforces one access through one
@@ -1025,10 +1020,9 @@ impl FinalEvaluator {
         })
     }
 }
-// endregion:once-only-final-evaluation
 
 #[cfg(test)]
-mod tests {
+mod course_tests {
     use super::*;
     use crate::data::CausalWindowConfig;
     use crate::models::decoder::{DecoderModel, DecoderModelConfig};
