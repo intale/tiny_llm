@@ -5,6 +5,7 @@ use crate::data::EncodedCorpusPartitions;
 use rustc_hash::{FxBuildHasher, FxHashMap};
 use std::collections::{HashMap};
 use std::fmt;
+use std::iter::Empty;
 
 type TokenId = u32;
 type Count = u64;
@@ -38,7 +39,7 @@ pub struct BigramModel {
 impl BigramModel {
     /// Fits one count per adjacent pair in each caller-supplied training document.
     ///
-    /// Documents ramin separate: the final token of one document is never paired with the first
+    /// Documents remain separate: the final token of one document is never paired with the first
     /// token of the next document.
     /// Vocabulary size must be gte max(training_documents.flatten()) + 1
     pub fn fit_training_documents(
