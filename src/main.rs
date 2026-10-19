@@ -16,6 +16,7 @@ pub mod utils;
 mod vocabulary;
 mod attention;
 mod evaluation;
+mod generation;
 
 fn main() {
     if std::env::args()
