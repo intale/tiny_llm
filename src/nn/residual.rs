@@ -71,6 +71,14 @@ impl TensorValue {
     }
 }
 
+pub fn residual_add_with_context(
+    context: AutogradContext,
+    identity: &TensorValue,
+    branch_output: &TensorValue,
+) -> Result<TensorValue, ResidualError> {
+    branch_output.residual_add_with_context(context, identity)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -149,8 +157,14 @@ mod tests {
                     let result = result.as_ref().unwrap();
                     let seed = backward_with_test_seed(result);
 
-                    assert_eq!(branch_output_param.gradient().unwrap().as_slice(), vec![0.5, 1.0]);
-                    assert_eq!(identity_param.gradient().unwrap().as_slice(), vec![0.5, 1.0]);
+                    assert_eq!(
+                        branch_output_param.gradient().unwrap().as_slice(),
+                        vec![0.5, 1.0]
+                    );
+                    assert_eq!(
+                        identity_param.gradient().unwrap().as_slice(),
+                        vec![0.5, 1.0]
+                    );
                     assert_sampled_gradient(
                         &branch_output_param,
                         &branch_output_tensor,
@@ -158,7 +172,9 @@ mod tests {
                         |candidate| {
                             let candidate = TensorValue::parameter(candidate.clone()).unwrap();
                             let right = TensorValue::constant(identity_tensor.clone()).unwrap();
-                            candidate.residual_add_with_context(context, &right).unwrap()
+                            candidate
+                                .residual_add_with_context(context, &right)
+                                .unwrap()
                         },
                     );
                 }
