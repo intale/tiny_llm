@@ -11,7 +11,6 @@ use crate::autograd::tensor_core::{
 use crate::models::decoder::{DecoderModel, DecoderModelConfig};
 use crate::nn::embedding::EmbeddingError;
 use crate::nn::init::SplitMix64;
-use crate::nn::probability::log_softmax_forward;
 use crate::nn::residual::{ResidualError, residual_add_with_context};
 use crate::nn::rms_norm::RmsNormError;
 use crate::nn::swiglu::SwiGluError;
