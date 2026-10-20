@@ -1621,6 +1621,38 @@ impl fmt::Debug for TensorValue {
     }
 }
 
+/// One cache's immutable binding to a parameter node and its current primal.
+#[derive(Clone, Debug)]
+pub struct TensorValueBinding {
+    value: TensorValue,
+    revision: u64,
+}
+
+impl TensorValueBinding {
+    pub fn capture(value: &TensorValue) -> Self {
+        Self {
+            value: value.clone(),
+            revision: value.value_revision(),
+        }
+    }
+
+    pub fn node_matches(&self, value: &TensorValue) -> bool {
+        self.value.is_same_node(value)
+    }
+
+    pub fn revision_matches(&self, value: &TensorValue) -> bool {
+        self.revision == value.value_revision()
+    }
+
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    pub fn same_binding(&self, other: &Self) -> bool {
+        self.value.is_same_node(&other.value) && self.revision == other.revision
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
